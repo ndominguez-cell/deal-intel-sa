@@ -113,29 +113,49 @@ export async function POST(req: Request) {
   }
 
   // ---- (b) Persist to Supabase FIRST -------------------------------------
+  // NOTE: the live `auto_leads` table uses this schema (created in the
+  // original project, richer than a flat mirror):
+  //   full_name, phone, email, vehicle_interest, current_vehicle, has_trade,
+  //   down_payment, payment_target, credit_band, timeframe, consent_sms,
+  //   source, utm (jsonb), clickup_task_id, status
+  // We map the funnel payload onto it here.
+  const currentVehicle = lead.has_trade_in
+    ? [lead.trade_year, lead.trade_make, lead.trade_model, lead.trade_mileage]
+        .map((s) => (s || "").trim())
+        .filter(Boolean)
+        .join(" ")
+    : "";
+
+  const utm = {
+    utm_source: lead.utm_source || null,
+    utm_medium: lead.utm_medium || null,
+    utm_campaign: lead.utm_campaign || null,
+    utm_content: lead.utm_content || null,
+    utm_term: lead.utm_term || null,
+  };
+
+  let leadId: string | null = null;
   try {
-    const { error } = await getSupabaseAdmin().from("auto_leads").insert({
-      name: lead.name,
-      phone: lead.phone,
-      email: lead.email || null,
-      vehicle_type: lead.vehicle_type || null,
-      has_trade_in: lead.has_trade_in,
-      trade_year: lead.trade_year || null,
-      trade_make: lead.trade_make || null,
-      trade_model: lead.trade_model || null,
-      trade_mileage: lead.trade_mileage || null,
-      payment_target: lead.payment_target || null,
-      down_payment: lead.down_payment || null,
-      credit_band: lead.credit_band || null,
-      timeframe: lead.timeframe || null,
-      consent: lead.consent,
-      source: lead.source || null,
-      utm_source: lead.utm_source || null,
-      utm_medium: lead.utm_medium || null,
-      utm_campaign: lead.utm_campaign || null,
-      utm_content: lead.utm_content || null,
-      utm_term: lead.utm_term || null,
-    });
+    const { data, error } = await getSupabaseAdmin()
+      .from("auto_leads")
+      .insert({
+        full_name: lead.name,
+        phone: lead.phone,
+        email: lead.email || null,
+        vehicle_interest: lead.vehicle_type || null,
+        current_vehicle: currentVehicle || null,
+        has_trade: lead.has_trade_in,
+        down_payment: lead.down_payment || null,
+        payment_target: lead.payment_target || null,
+        credit_band: lead.credit_band || null,
+        timeframe: lead.timeframe || null,
+        consent_sms: lead.consent,
+        source: lead.source || null,
+        utm,
+        status: "NEW",
+      })
+      .select("id")
+      .single();
 
     if (error) {
       console.error("[leads] Supabase insert failed:", error);
@@ -144,6 +164,7 @@ export async function POST(req: Request) {
         { status: 500 }
       );
     }
+    leadId = data?.id ?? null;
   } catch (err) {
     console.error("[leads] Unexpected Supabase error:", err);
     return NextResponse.json(
@@ -156,7 +177,18 @@ export async function POST(req: Request) {
   // The lead is safely stored. From here, nothing may cause a 500 or data
   // loss — every side effect is isolated and swallowed.
   try {
-    await createLeadTask(lead);
+    const task = await createLeadTask(lead);
+    // Write the ClickUp task id back onto the lead row (best-effort).
+    if (task?.id && leadId) {
+      try {
+        await getSupabaseAdmin()
+          .from("auto_leads")
+          .update({ clickup_task_id: task.id })
+          .eq("id", leadId);
+      } catch (err) {
+        console.error("[leads] failed to write clickup_task_id (ignored):", err);
+      }
+    }
   } catch (err) {
     console.error("[leads] createLeadTask threw (ignored):", err);
   }

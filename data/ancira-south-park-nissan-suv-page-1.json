@@ -36,8 +36,11 @@
       "image_url": "https://vehicle-images.carscommerce.inc/4d59-110009122/3N8AP6BE0TL397068/7c809d6ae0143740f8f739b801fd055e.jpg",
       "source_url": "https://www.southparknissan.com/inventory/new-2026-nissan-kicks-s-san-antonio-tx-3n8ap6be0tl397068/",
       "conditional_offers": ["Nissan Military Cash $500", "Nissan College Grad $500"],
-      "advertised_discount_from_msrp": 1090,
-      "data_quality_notes": ["Advertised price excludes listed fees and taxes."]
+      "msrp_minus_ancira_price": 1090,
+      "data_quality_notes": [
+        "MSRP minus displayed Ancira Price; not the same as the displayed Ancira Savings amount.",
+        "Advertised price excludes listed fees and taxes."
+      ]
     },
     {
       "vin": "3N8AP6BE8TL417017",
@@ -57,8 +60,11 @@
       "image_url": "https://vehicle-images.carscommerce.inc/aa02-110009122/3N8AP6BE8TL417017/95b87ea6fdb7099991930a3f9407dadf.jpg",
       "source_url": "https://www.southparknissan.com/inventory/new-2026-nissan-kicks-s-san-antonio-tx-3n8ap6be8tl417017/",
       "conditional_offers": ["Nissan Military Cash $500", "Nissan College Grad $500"],
-      "advertised_discount_from_msrp": 1100,
-      "data_quality_notes": ["Advertised price excludes listed fees and taxes."]
+      "msrp_minus_ancira_price": 1100,
+      "data_quality_notes": [
+        "MSRP minus displayed Ancira Price; not the same as the displayed Ancira Savings amount.",
+        "Advertised price excludes listed fees and taxes."
+      ]
     },
     {
       "vin": "3N8AP6CE7TL432803",
@@ -78,9 +84,10 @@
       "image_url": "https://vehicle-images.carscommerce.inc/3e30-110009122/3N8AP6CE7TL432803/f06345d503a9dd29f5192377142c7d7f.jpg",
       "source_url": "https://www.southparknissan.com/inventory/new-2026-nissan-kicks-sv-san-antonio-tx-3n8ap6ce7tl432803/",
       "conditional_offers": ["Nissan College Grad $500", "Nissan Military Cash $500"],
-      "advertised_discount_from_msrp": 2740,
+      "msrp_minus_ancira_price": 2740,
       "data_quality_notes": [
-        "Advertised price includes the displayed Nissan Customer Cash according to the supplied page extraction; verify eligibility and price construction before publishing.",
+        "MSRP minus displayed Ancira Price; not the same as the displayed Ancira Savings amount.",
+        "The displayed price arithmetic appears to include the $1,500 customer-cash line and then add the $225 doc fee plus $10 deputy fee; verify this with the dealer before using it in an ad.",
         "Advertised price excludes listed fees and taxes."
       ]
     }

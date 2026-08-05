@@ -1,21 +1,21 @@
 import Link from "next/link";
-import { getAnciraSampleSource, rankAnciraSample } from "@/lib/ancira-sample";
+import { getLiveAnciraSource, getLiveTopThree } from "@/lib/ancira-live";
 
 function money(value: number | null): string {
   return value == null ? "—" : new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 }).format(value);
 }
 
 export default function AnciraDealsPage() {
-  const vehicles = rankAnciraSample();
-  const source = getAnciraSampleSource();
+  const vehicles = getLiveTopThree();
+  const source = getLiveAnciraSource();
 
   return (
     <main className="min-h-[100dvh] bg-ink px-4 py-8 text-surface">
       <div className="mx-auto max-w-5xl">
         <p className="text-xs font-black uppercase tracking-[0.2em] text-amber">SA Auto Match · Simulation</p>
         <h1 className="mt-2 text-3xl font-black">Top 3 Ancira deal candidates</h1>
-        <p className="mt-3 max-w-3xl text-sm leading-relaxed text-surface/70">These are ranked from the three complete vehicle records supplied from South Park Nissan page 1. They are not being sent as ads. The full-engine result requires all 15 inventory pages.</p>
-        <div className="mt-4 rounded-xl border border-amber/30 bg-amber/10 p-4 text-sm text-amber-200"><strong>Sample scope:</strong> {source.total_listed} vehicles advertised across {source.total_pages} pages; {vehicles.length} records currently extracted.</div>
+        <p className="mt-3 max-w-3xl text-sm leading-relaxed text-surface/70">These are the top three candidates ranked from the full South Park Nissan SUV/crossover crawl. They are not being sent as ads. The pages and ads remain a simulation until final availability and pricing checks are complete.</p>
+        <div className="mt-4 rounded-xl border border-amber/30 bg-amber/10 p-4 text-sm text-amber-200"><strong>Full crawl scope:</strong> {source.unique_vehicles} unique vehicles found across {source.pages_crawled} pages; top three selected by the deal engine.</div>
         <div className="mt-8 grid gap-5 lg:grid-cols-3">
           {vehicles.map((vehicle, index) => (
             <article key={vehicle.vin} className="overflow-hidden rounded-2xl bg-surface text-ink shadow-card">

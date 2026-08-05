@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import FunnelShell from "@/components/FunnelShell";
 import ProgressBar from "@/components/ProgressBar";
@@ -251,6 +252,9 @@ export default function FunnelPage() {
   return (
     <FunnelShell>
       <div className="mb-4">
+        <Link href="/deals" className="mb-3 block rounded-xl border border-amber/40 bg-amber/10 px-4 py-3 text-center text-xs font-bold text-amber-400 hover:bg-amber/20">
+          Browse mock Ancira deal previews →
+        </Link>
         <ProgressBar current={stepIndex + 1} total={steps.length} />
       </div>
 

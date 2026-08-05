@@ -1,0 +1,88 @@
+{
+  "source": {
+    "dealer_group": "Ancira Auto Group",
+    "dealer_name": "South Park Nissan",
+    "market": "San Antonio, Texas",
+    "source_url": "https://www.southparknissan.com/new-nissan-san-antonio-tx/suv-crossover/",
+    "retrieved_from": "User-provided Firecrawl extraction",
+    "page": 1,
+    "total_pages": 15,
+    "total_listed": 295,
+    "phone": "(210) 864-8721",
+    "address": "8606 Interstate 35 Access Rd, San Antonio, TX 78211",
+    "notes": [
+      "Prices are before tax, title, license, $225 doc fee, $10 deputy fee, and VIT tax.",
+      "Conditional offers may have eligibility restrictions.",
+      "Availability and pricing must be rechecked before publishing an ad."
+    ]
+  },
+  "vehicles": [
+    {
+      "vin": "3N8AP6BE0TL397068",
+      "stock_number": "N397068",
+      "year": 2026,
+      "make": "Nissan",
+      "model": "Kicks",
+      "trim": "S",
+      "condition": "new",
+      "vehicle_category": "suv",
+      "msrp": 24455,
+      "ancira_savings": 1325,
+      "customer_cash": null,
+      "ancira_price": 23365,
+      "doc_fee": 225,
+      "deputy_fee": 10,
+      "mileage": null,
+      "image_url": "https://vehicle-images.carscommerce.inc/4d59-110009122/3N8AP6BE0TL397068/7c809d6ae0143740f8f739b801fd055e.jpg",
+      "source_url": "https://www.southparknissan.com/inventory/new-2026-nissan-kicks-s-san-antonio-tx-3n8ap6be0tl397068/",
+      "conditional_offers": ["Nissan Military Cash $500", "Nissan College Grad $500"],
+      "advertised_discount_from_msrp": 1090,
+      "data_quality_notes": ["Advertised price excludes listed fees and taxes."]
+    },
+    {
+      "vin": "3N8AP6BE8TL417017",
+      "stock_number": "S417017",
+      "year": 2026,
+      "make": "Nissan",
+      "model": "Kicks",
+      "trim": "S",
+      "condition": "new",
+      "vehicle_category": "suv",
+      "msrp": 24755,
+      "ancira_savings": 1335,
+      "customer_cash": null,
+      "ancira_price": 23655,
+      "doc_fee": 225,
+      "deputy_fee": 10,
+      "image_url": "https://vehicle-images.carscommerce.inc/aa02-110009122/3N8AP6BE8TL417017/95b87ea6fdb7099991930a3f9407dadf.jpg",
+      "source_url": "https://www.southparknissan.com/inventory/new-2026-nissan-kicks-s-san-antonio-tx-3n8ap6be8tl417017/",
+      "conditional_offers": ["Nissan Military Cash $500", "Nissan College Grad $500"],
+      "advertised_discount_from_msrp": 1100,
+      "data_quality_notes": ["Advertised price excludes listed fees and taxes."]
+    },
+    {
+      "vin": "3N8AP6CE7TL432803",
+      "stock_number": "N432803",
+      "year": 2026,
+      "make": "Nissan",
+      "model": "Kicks",
+      "trim": "SV",
+      "condition": "new",
+      "vehicle_category": "suv",
+      "msrp": 27160,
+      "ancira_savings": 1475,
+      "customer_cash": 1500,
+      "ancira_price": 24420,
+      "doc_fee": 225,
+      "deputy_fee": 10,
+      "image_url": "https://vehicle-images.carscommerce.inc/3e30-110009122/3N8AP6CE7TL432803/f06345d503a9dd29f5192377142c7d7f.jpg",
+      "source_url": "https://www.southparknissan.com/inventory/new-2026-nissan-kicks-sv-san-antonio-tx-3n8ap6ce7tl432803/",
+      "conditional_offers": ["Nissan College Grad $500", "Nissan Military Cash $500"],
+      "advertised_discount_from_msrp": 2740,
+      "data_quality_notes": [
+        "Advertised price includes the displayed Nissan Customer Cash according to the supplied page extraction; verify eligibility and price construction before publishing.",
+        "Advertised price excludes listed fees and taxes."
+      ]
+    }
+  ]
+}

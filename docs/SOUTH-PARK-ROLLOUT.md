@@ -57,7 +57,7 @@ The ad and landing page should offer a quick path to:
 4. Choose a preferred contact method.
 5. Set an appointment.
 
-The current app captures the lead and routes it to Supabase and ClickUp. A conversational bot appointment layer is still a separate integration; the current CTA is a structured lead form, not a live chat agent.
+The current app captures the lead, requested visit timing, and preferred contact window, then routes it to Supabase and ClickUp. The salesperson owns final appointment confirmation: text or call within five minutes, confirm availability, and move the ClickUp task to `APPT SET`.
 
 ## Stop conditions
 

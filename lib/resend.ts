@@ -13,8 +13,8 @@ const ALERT_EMAIL_TO = process.env.ALERT_EMAIL_TO;
 
 function isHotLead(lead: Lead): boolean {
   const tf = (lead.timeframe || "").trim();
-  if (tf === "This week") return true;
-  if (lead.has_trade_in && tf === "This month") return true;
+  if (tf === "Today" || tf === "Tomorrow") return true;
+  if (lead.has_trade_in && tf === "This week") return true;
   return false;
 }
 
@@ -57,10 +57,8 @@ function buildHtml(lead: Lead, hot: boolean): string {
       ${row("Vehicle type", lead.vehicle_type)}
       ${row("Has trade-in", lead.has_trade_in ? "Yes" : "No")}
       ${tradeRows}
-      ${row("Payment target", lead.payment_target)}
-      ${row("Down payment", lead.down_payment)}
-      ${row("Credit band (self-reported)", lead.credit_band)}
-      ${row("Timeframe", lead.timeframe)}
+      ${row("Requested timing", lead.timeframe)}
+      ${row("Best contact window", lead.contact_window)}
       ${row("Source", lead.source)}
       ${row("utm_source", lead.utm_source)}
       ${row("utm_medium", lead.utm_medium)}
@@ -69,8 +67,7 @@ function buildHtml(lead: Lead, hot: boolean): string {
       ${row("utm_term", lead.utm_term)}
     </table>
     <p style="margin:16px 0 0;color:#999;font-size:12px;">
-      Credit band is self-reported by the customer and is not a credit score,
-      application, or financing decision.
+      Follow up within 5 minutes to confirm vehicle availability and the requested visit time.
     </p>
   </div>`;
 }
@@ -91,6 +88,9 @@ export async function sendLeadAlert(lead: Lead): Promise<void> {
     lead.vehicle_type ? ` — ${lead.vehicle_type}` : ""
   }`;
 
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 8000);
+
   try {
     const res = await fetch("https://api.resend.com/emails", {
       method: "POST",
@@ -105,6 +105,7 @@ export async function sendLeadAlert(lead: Lead): Promise<void> {
         subject,
         html: buildHtml(lead, hot),
       }),
+      signal: controller.signal,
     });
 
     if (!res.ok) {
@@ -118,5 +119,7 @@ export async function sendLeadAlert(lead: Lead): Promise<void> {
     console.info("[resend] Lead alert email sent.");
   } catch (err) {
     console.error("[resend] Unexpected error sending alert email:", err);
+  } finally {
+    clearTimeout(timeout);
   }
 }

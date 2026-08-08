@@ -6,10 +6,12 @@ import { formatCurrency, getMockVehicle, MOCK_ANCIRA_INVENTORY } from "@/lib/moc
 export const dynamicParams = false;
 
 export function generateStaticParams() {
+  if (process.env.ENABLE_INVENTORY_PREVIEWS !== "true") return [];
   return MOCK_ANCIRA_INVENTORY.map((vehicle) => ({ id: vehicle.id }));
 }
 
 export default async function DealPage({ params }: { params: { id: string } }) {
+  if (process.env.ENABLE_INVENTORY_PREVIEWS !== "true") notFound();
   const vehicle = getMockVehicle(params.id);
   if (!vehicle) notFound();
 

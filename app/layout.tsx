@@ -2,17 +2,17 @@ import type { Metadata, Viewport } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "SA Auto Match — What's Your Trade Worth?",
+  title: "SA Auto Match — Find Your Vehicle Match",
   description:
-    "Find out what your trade-in is worth and get matched to a vehicle and payment that fits. Fast, free, no obligation.",
+    "Find a vehicle match, share your trade-in details, and request a visit. Fast, free, no obligation.",
   robots: {
     index: false,
     follow: false,
   },
   openGraph: {
-    title: "SA Auto Match — What's Your Trade Worth?",
+    title: "SA Auto Match — Find Your Vehicle Match",
     description:
-      "Find out what your trade-in is worth and get matched to a vehicle and payment that fits.",
+      "Find a vehicle match, share your trade-in details, and request a visit.",
     type: "website",
   },
 };

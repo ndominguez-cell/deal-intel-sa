@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { notFound } from "next/navigation";
 import { getLiveAnciraSource, getLiveTopThree } from "@/lib/ancira-live";
 
 function money(value: number | null): string {
@@ -6,6 +7,7 @@ function money(value: number | null): string {
 }
 
 export default function AnciraDealsPage() {
+  if (process.env.ENABLE_INVENTORY_PREVIEWS !== "true") notFound();
   const vehicles = getLiveTopThree();
   const source = getLiveAnciraSource();
 

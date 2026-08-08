@@ -90,8 +90,8 @@ export default function ThanksPage() {
           <h1 className="text-2xl font-extrabold text-ink">You&apos;re all set!</h1>
           <p className="mx-auto mt-3 max-w-sm text-sm leading-relaxed text-ink-700/80">
             A vehicle specialist is reviewing your info right now. Keep an eye on
-            your phone — we&apos;ll reach out shortly with real matches and payment
-            options.
+            your phone — we&apos;ll reach out shortly to confirm availability and set
+            a visit time.
           </p>
 
           <div className="mt-6 rounded-xl border border-surface-line bg-white p-4 text-left">
@@ -100,16 +100,14 @@ export default function ThanksPage() {
             </p>
             <ul className="mt-2 space-y-2 text-sm text-ink-700/80">
               <li className="flex items-start gap-2">
-                <span className="text-amber-700">1.</span> We review your trade
-                and preferences.
+                <span className="text-amber-700">1.</span> We review your vehicle request.
               </li>
               <li className="flex items-start gap-2">
                 <span className="text-amber-700">2.</span> A specialist texts or
                 calls you.
               </li>
               <li className="flex items-start gap-2">
-                <span className="text-amber-700">3.</span> You pick the match
-                that fits your budget.
+                <span className="text-amber-700">3.</span> We confirm a visit time that works for you.
               </li>
             </ul>
           </div>

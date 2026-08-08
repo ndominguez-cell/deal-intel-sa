@@ -1,7 +1,9 @@
 import Link from "next/link";
+import { notFound } from "next/navigation";
 import { formatCurrency, getRankedMockInventory } from "@/lib/mock-inventory";
 
 export default function DealsPage() {
+  if (process.env.ENABLE_INVENTORY_PREVIEWS !== "true") notFound();
   const vehicles = getRankedMockInventory();
   return (
     <main className="min-h-[100dvh] bg-ink px-4 py-8 text-surface">

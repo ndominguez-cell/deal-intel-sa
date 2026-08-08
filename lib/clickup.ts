@@ -11,19 +11,19 @@ import "server-only";
 import type { Lead } from "./types";
 
 const CLICKUP_API_TOKEN = process.env.CLICKUP_API_TOKEN;
-const CLICKUP_LIST_ID = process.env.CLICKUP_LIST_ID || "901114100607";
+const CLICKUP_LIST_ID = process.env.CLICKUP_LIST_ID;
 
 type ClickUpResult = { id: string; url?: string } | null;
 
 /**
  * Hot-lead heuristic:
- *   - timeframe === "This week", OR
- *   - has_trade_in AND timeframe === "This month"
+ *   - timeframe === "Today" or "Tomorrow", OR
+ *   - has_trade_in AND timeframe === "This week"
  */
 function isHotLead(lead: Lead): boolean {
   const tf = (lead.timeframe || "").trim();
-  if (tf === "This week") return true;
-  if (lead.has_trade_in && tf === "This month") return true;
+  if (tf === "Today" || tf === "Tomorrow") return true;
+  if (lead.has_trade_in && tf === "This week") return true;
   return false;
 }
 
@@ -61,17 +61,11 @@ function buildDescription(lead: Lead): string {
     `- **Has trade-in:** ${yn(lead.has_trade_in)}`,
     tradeBlock,
     ``,
-    `## Budget`,
-    `- **Monthly payment target:** ${dash(lead.payment_target)}`,
-    `- **Down payment:** ${dash(lead.down_payment)}`,
-    `- **Credit band (self-reported):** ${dash(lead.credit_band)}`,
-    ``,
-    `> ⚠️ Credit band is self-reported by the customer only. It is not a`,
-    `> credit score, application, or any financing decision.`,
-    ``,
-    `## Timing & Consent`,
-    `- **Timeframe:** ${dash(lead.timeframe)}`,
+    `## Appointment Request`,
+    `- **Requested timing:** ${dash(lead.timeframe)}`,
+    `- **Best contact window:** ${dash(lead.contact_window)}`,
     `- **Consent to contact:** ${yn(lead.consent)}`,
+    `- **Next action:** Text or call within 5 minutes and confirm a visit time.`,
     ``,
     `## Attribution`,
     `- **Source:** ${dash(lead.source)}`,
@@ -108,6 +102,9 @@ export async function createLeadTask(lead: Lead): Promise<ClickUpResult> {
     priority,
   };
 
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 8000);
+
   try {
     const res = await fetch(
       `https://api.clickup.com/api/v2/list/${encodeURIComponent(
@@ -120,6 +117,7 @@ export async function createLeadTask(lead: Lead): Promise<ClickUpResult> {
           "Content-Type": "application/json",
         },
         body: JSON.stringify(body),
+        signal: controller.signal,
       }
     );
 
@@ -147,5 +145,7 @@ export async function createLeadTask(lead: Lead): Promise<ClickUpResult> {
   } catch (err) {
     console.error("[clickup] Unexpected error creating task:", err);
     return null;
+  } finally {
+    clearTimeout(timeout);
   }
 }

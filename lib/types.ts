@@ -16,15 +16,9 @@ export type Lead = {
   trade_model: string;
   trade_mileage: string;
 
-  payment_target: string;
-  down_payment: string;
-
-  // Self-reported credit band only (e.g. "Excellent", "Good", "Fair",
-  // "Rebuilding"). This is NOT a credit score, application, or any kind of
-  // financing decision.
-  credit_band: string;
-
   timeframe: string;
+  contact_window: string;
+  submission_id: string;
 
   consent: boolean;
 
@@ -48,10 +42,9 @@ export const LEAD_FIELDS: (keyof Lead)[] = [
   "trade_make",
   "trade_model",
   "trade_mileage",
-  "payment_target",
-  "down_payment",
-  "credit_band",
   "timeframe",
+  "contact_window",
+  "submission_id",
   "consent",
   "source",
   "utm_source",

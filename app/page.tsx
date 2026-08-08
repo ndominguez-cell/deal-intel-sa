@@ -1,7 +1,6 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 import FunnelShell from "@/components/FunnelShell";
 import ProgressBar from "@/components/ProgressBar";
@@ -21,10 +20,9 @@ type Answers = {
   trade_make: string;
   trade_model: string;
   trade_mileage: string;
-  payment_target: string;
-  down_payment: string;
-  credit_band: string;
   timeframe: string;
+  contact_window: string;
+  submission_id: string;
   name: string;
   phone: string;
   email: string;
@@ -39,10 +37,9 @@ const EMPTY: Answers = {
   trade_make: "",
   trade_model: "",
   trade_mileage: "",
-  payment_target: "",
-  down_payment: "",
-  credit_band: "",
   timeframe: "",
+  contact_window: "",
+  submission_id: "",
   name: "",
   phone: "",
   email: "",
@@ -54,9 +51,6 @@ type StepId =
   | "vehicle"
   | "trade"
   | "tradeDetails"
-  | "payment"
-  | "down"
-  | "credit"
   | "timeframe"
   | "contact";
 
@@ -71,28 +65,17 @@ const TRADE_OPTS = [
   { value: "yes", label: "Yes, I have a trade-in" },
   { value: "no", label: "No trade-in" },
 ];
-const PAYMENT_OPTS = [
-  { value: "<$300", label: "Under $300" },
-  { value: "$300-400", label: "$300 – $400" },
-  { value: "$400-500", label: "$400 – $500" },
-  { value: "$500+", label: "$500+" },
-];
-const DOWN_OPTS = [
-  { value: "$0", label: "$0" },
-  { value: "<$2k", label: "Under $2,000" },
-  { value: "$2-5k", label: "$2,000 – $5,000" },
-  { value: "$5k+", label: "$5,000+" },
-];
-const CREDIT_OPTS = [
-  { value: "Excellent", label: "Excellent" },
-  { value: "Good", label: "Good" },
-  { value: "Fair", label: "Fair" },
-  { value: "Rebuilding", label: "Rebuilding" },
-];
 const TIMEFRAME_OPTS = [
+  { value: "Today", label: "Today" },
+  { value: "Tomorrow", label: "Tomorrow" },
   { value: "This week", label: "This week" },
-  { value: "This month", label: "This month" },
-  { value: "Just browsing", label: "Just browsing" },
+  { value: "Just exploring", label: "Just exploring" },
+];
+const CONTACT_WINDOW_OPTS = [
+  { value: "Morning", label: "Morning" },
+  { value: "Afternoon", label: "Afternoon" },
+  { value: "Evening", label: "Evening" },
+  { value: "Anytime", label: "Anytime" },
 ];
 
 export default function FunnelPage() {
@@ -116,6 +99,14 @@ export default function FunnelPage() {
     } catch {
       /* ignore corrupt draft */
     }
+    setAnswers((prev) => ({
+      ...prev,
+      submission_id:
+        prev.submission_id ||
+        (typeof crypto !== "undefined" && crypto.randomUUID
+          ? crypto.randomUUID()
+          : `${Date.now()}-${Math.random().toString(36).slice(2)}`),
+    }));
     hydrated.current = true;
     return () => {
       if (advanceTimer.current) clearTimeout(advanceTimer.current);
@@ -138,9 +129,6 @@ export default function FunnelPage() {
     "vehicle",
     "trade",
     ...(answers.has_trade_in === "yes" ? (["tradeDetails"] as StepId[]) : []),
-    "payment",
-    "down",
-    "credit",
     "timeframe",
     "contact",
   ];
@@ -178,7 +166,7 @@ export default function FunnelPage() {
           // recompute length with the new trade-in answer if relevant
           const willHaveTrade =
             key === "has_trade_in" ? value === "yes" : answers.has_trade_in === "yes";
-          const len = 7 + (willHaveTrade ? 1 : 0);
+          const len = 4 + (willHaveTrade ? 1 : 0);
           return Math.min(i + 1, len - 1);
         });
       }, 140);
@@ -210,10 +198,9 @@ export default function FunnelPage() {
       trade_make: hasTrade ? answers.trade_make.trim() : "",
       trade_model: hasTrade ? answers.trade_model.trim() : "",
       trade_mileage: hasTrade ? answers.trade_mileage.trim() : "",
-      payment_target: answers.payment_target,
-      down_payment: answers.down_payment,
-      credit_band: answers.credit_band,
       timeframe: answers.timeframe,
+      contact_window: answers.contact_window,
+      submission_id: answers.submission_id,
       consent: answers.consent,
       source: "sa-auto-match",
       company: answers.company, // honeypot — real users leave this blank
@@ -252,9 +239,6 @@ export default function FunnelPage() {
   return (
     <FunnelShell>
       <div className="mb-4">
-        <Link href="/deals" className="mb-3 block rounded-xl border border-amber/40 bg-amber/10 px-4 py-3 text-center text-xs font-bold text-amber-400 hover:bg-amber/20">
-          Browse mock Ancira deal previews →
-        </Link>
         <ProgressBar current={stepIndex + 1} total={steps.length} />
       </div>
 
@@ -328,55 +312,10 @@ export default function FunnelPage() {
         </StepCard>
       )}
 
-      {current === "payment" && (
-        <StepCard
-          title="Target monthly payment?"
-          subtitle="What feels comfortable for you each month."
-          footer={showBack ? <BackButton onClick={goBack} /> : undefined}
-        >
-          <OptionGrid
-            columns={2}
-            options={PAYMENT_OPTS}
-            value={answers.payment_target}
-            onSelect={(v) => selectAndAdvance("payment_target", v)}
-          />
-        </StepCard>
-      )}
-
-      {current === "down" && (
-        <StepCard
-          title="Down payment available?"
-          subtitle="Cash down, not counting your trade."
-          footer={showBack ? <BackButton onClick={goBack} /> : undefined}
-        >
-          <OptionGrid
-            columns={2}
-            options={DOWN_OPTS}
-            value={answers.down_payment}
-            onSelect={(v) => selectAndAdvance("down_payment", v)}
-          />
-        </StepCard>
-      )}
-
-      {current === "credit" && (
-        <StepCard
-          title="How would you rate your credit?"
-          subtitle="Your best guess — no check, no impact."
-          helper="This won't affect your credit — it's just a self-estimate."
-          footer={showBack ? <BackButton onClick={goBack} /> : undefined}
-        >
-          <OptionGrid
-            columns={2}
-            options={CREDIT_OPTS}
-            value={answers.credit_band}
-            onSelect={(v) => selectAndAdvance("credit_band", v)}
-          />
-        </StepCard>
-      )}
-
       {current === "timeframe" && (
         <StepCard
-          title="When are you looking to buy?"
+          title="When would you like help with a visit?"
+          subtitle="Pick the timing that works best. A specialist will confirm availability."
           footer={showBack ? <BackButton onClick={goBack} /> : undefined}
         >
           <OptionGrid
@@ -389,8 +328,8 @@ export default function FunnelPage() {
 
       {current === "contact" && (
         <StepCard
-          title="Where should we send your matches?"
-          subtitle="A specialist will reach out with real options."
+          title="Let's line up your next step"
+          subtitle="A specialist will confirm vehicle details and help set a visit."
           footer={showBack ? <BackButton onClick={goBack} /> : undefined}
         >
           <div className="space-y-3">
@@ -421,6 +360,18 @@ export default function FunnelPage() {
               onChange={(e) => set("email", e.target.value)}
             />
 
+            <div>
+              <p className="mb-1.5 text-xs font-bold uppercase tracking-wide text-ink-700/80">
+                Best time to reach you <span className="font-normal normal-case">(optional)</span>
+              </p>
+              <OptionGrid
+                columns={2}
+                options={CONTACT_WINDOW_OPTS}
+                value={answers.contact_window}
+                onSelect={(v) => set("contact_window", v)}
+              />
+            </div>
+
             {/* Honeypot — hidden from humans, catches bots. */}
             <input
               type="text"
@@ -444,8 +395,7 @@ export default function FunnelPage() {
                 By checking this box, I agree that SA Auto Match and the
                 participating dealership may contact me at the phone number and
                 email I provided — including by phone call and text message,
-                using automated technology or prerecorded messages — about
-                vehicles and my request. Consent is not a condition of any
+                using automated technology or prerecorded messages — about vehicles and my appointment request. Consent is not a condition of any
                 purchase. Message and data rates may apply; reply STOP to opt
                 out.
               </span>
@@ -462,7 +412,7 @@ export default function FunnelPage() {
               loading={submitting}
               disabled={!canSubmit}
             >
-              {error ? "Try Again" : "Get My Matches"}
+              {error ? "Try Again" : "Request My Appointment"}
             </PrimaryButton>
           </div>
         </StepCard>

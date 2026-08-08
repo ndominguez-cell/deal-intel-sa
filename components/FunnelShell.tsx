@@ -26,9 +26,9 @@ export default function FunnelShell({ children }: { children: ReactNode }) {
 
       <footer className="px-5 pb-6">
         <p className="mx-auto max-w-md text-center text-[11px] leading-relaxed text-surface/40">
-          SA Auto Match connects shoppers with participating dealers. Not a
-          lender or financing company; we do not make credit decisions. Message
-          and data rates may apply.{" "}
+          SA Auto Match connects shoppers with participating dealers. Vehicle
+          details and availability are confirmed by the participating dealer.
+          Message and data rates may apply.{" "}
           <Link
             href="/privacy"
             className="underline underline-offset-2 hover:text-surface/70"

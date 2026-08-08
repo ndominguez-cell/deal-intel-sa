@@ -1,6 +1,6 @@
 # SA Auto Match — Lead Funnel (POC)
 
-A bootstrap auto-dealer lead-generation funnel. Meta ads drive traffic to a neutral-branded landing page; leads flow into Supabase, spawn a ClickUp task, optionally email the salesperson, and fire the Meta **Lead** pixel on the thank-you page.
+A bootstrap auto-dealer lead-generation funnel. Meta ads drive traffic to a neutral-branded landing page; shoppers provide vehicle/trade details and a requested visit timing, leads flow into Supabase, spawn a ClickUp task, optionally email the salesperson, and fire the Meta **Lead** pixel on the thank-you page.
 
 Stack: **Next.js 14 (App Router)** · **Vercel** · **Supabase** · **ClickUp** · **Resend** · **Meta Pixel**.
 
@@ -13,7 +13,7 @@ Meta ad (SA Auto Match)
       │  click (UTMs preserved)
       ▼
 Funnel page  ( / )
-      │  form submit (name, phone, vehicle, angle, UTMs)
+      │  form submit (name, phone, vehicle, visit timing, UTMs)
       ▼
 POST /api/leads
       ├── insert row → Supabase table `auto_leads`
@@ -82,7 +82,7 @@ Set these in `.env.local` for local dev and in **Vercel → Project → Settings
 3. Confirm the table exists under **Table Editor → `auto_leads`**.
 4. Grab `SUPABASE_URL` and the `service_role` key for your env vars (step 4).
 
-`auto_leads` captures at minimum: name, phone, vehicle of interest / current vehicle, the funnel angle (`tradein` / `payment` / `freshdeals`), the UTM params, and a created-at timestamp.
+`auto_leads` captures at minimum: name, phone, vehicle of interest / current vehicle, requested visit timing, preferred contact window in the UTM JSON, the funnel angle (`tradein` / `utility` / `inventory`), the UTM params, and a created-at timestamp.
 
 ---
 

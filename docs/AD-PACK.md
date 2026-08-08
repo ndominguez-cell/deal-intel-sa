@@ -6,7 +6,7 @@
 **Geo:** 15–20 mile radius around the single partner dealership address
 **Platforms:** Facebook + Instagram, mobile-first
 
-> **Before you launch:** swap every `https://YOURDOMAIN.com/...` link below for the live neutral domain (e.g. `https://saautomatch.com/...`). Keep the `?utm_...` query string exactly as written — the funnel and reporting depend on it.
+> **Before you launch:** swap every `https://sa-auto-match.vercel.app/...` link below for the live neutral domain (e.g. `https://saautomatch.com/...`). Keep the `?utm_...` query string exactly as written — the funnel and reporting depend on it.
 
 ---
 
@@ -16,8 +16,8 @@
 |---|---|
 | Campaign | Objective: **Leads**. Special Ad Category: **None** (see compliance). Budget type: **Ad set (ABO)** |
 | Ad Set A — Trade-In (PRIMARY) | **$20/day** · `utm_content=tradein` |
-| Ad Set B — Payment/Value | **$15/day** · `utm_content=payment` |
-| Ad Set C — Fresh Deals / Recently Reduced | **$15/day** · `utm_content=freshdeals` |
+| Ad Set B — SUV Utility | **$15/day** · `utm_content=utility` |
+| Ad Set C — Current Inventory | **$15/day** · `utm_content=inventory` |
 
 Total = **$50/day**. Trade-in is the horse we're betting on — it gets the biggest slice.
 
@@ -27,108 +27,105 @@ Total = **$50/day**. Trade-in is the horse we're betting on — it gets the bigg
 
 **Destination URL**
 ```
-https://YOURDOMAIN.com/?utm_source=meta&utm_medium=paid_social&utm_campaign=sa-auto-match-poc&utm_content=tradein
+https://sa-auto-match.vercel.app/?utm_source=meta&utm_medium=paid_social&utm_campaign=sa-auto-match-poc&utm_content=tradein
 ```
 
 ### Primary text — Variant A1
 ```
-Your car is worth more than you think right now.
-Used inventory is tight, and dealers are paying strong money for clean trade-ins.
-Tell us what you're driving and we'll match you to a real number — plus vehicles you could roll into.
-No haggling, no lot visit required to get started.
-See your trade match in about 60 seconds 👇
+Thinking about upgrading? Start with what you already own.
+Tell us what you're driving and what you want next, and we'll help organize your vehicle request.
+Start online with no pressure, then request a visit when you're ready.
+Get started 👇
 ```
 
 ### Primary text — Variant A2
 ```
-Thinking about upgrading? Start with what you already own.
-Enter your vehicle details and we'll line up a trade value and matching options in your area.
-It's fast, it's online, and there's zero pressure to buy today.
-Thousands of drivers are cashing in on high trade demand — see where you land.
+Your trade-in is a useful starting point for your next vehicle.
+Share a few details about what you drive and we'll help narrow down current local options.
+It's fast, online, and there is no pressure to buy today.
+Request your next step.
 ```
 
 ### Headlines (pick/rotate 3)
-1. Get Your Trade Value in 60 Seconds
-2. Your Car Could Be Worth More Than You Think
-3. Trade Match — No Lot Visit Needed
+1. Start Your Vehicle Match Online
+2. Begin With Your Trade-In Details
+3. Request Your Next Vehicle Visit
 
 ### Description
 ```
-Fast online trade match. No haggling, no pressure.
+Share your trade details and request a visit.
 ```
 
 ---
 
-## 2. AD SET B — Payment / Monthly Value Angle ($15/day)
+## 2. AD SET B — SUV Utility / Vehicle Fit Angle ($15/day)
 
 **Destination URL**
 ```
-https://YOURDOMAIN.com/?utm_source=meta&utm_medium=paid_social&utm_campaign=sa-auto-match-poc&utm_content=payment
+https://sa-auto-match.vercel.app/?utm_source=meta&utm_medium=paid_social&utm_campaign=sa-auto-match-poc&utm_content=utility
 ```
 
 ### Primary text — Variant B1
 ```
-Want a newer vehicle without blowing up your monthly budget?
-Tell us the ride you're after and roughly what works for you each month.
-We'll match you to vehicles in your area that fit — no back-and-forth, no lot pressure.
-Smarter shopping starts before you ever step foot on a lot.
-Find your match 👇
+Need an SUV for everyday driving?
+Tell us what matters most — room, features, or a trade-in — and we'll help narrow down current local options.
+Start online, skip the guesswork, and request a visit when you're ready.
+Find your SUV match 👇
 ```
 
 ### Primary text — Variant B2
 ```
-Stop guessing what fits your budget.
-Answer a few quick questions and we'll match you to vehicles nearby that line up with what you want to spend each month.
-It takes about a minute and you do it all from your phone.
-No calls until you're ready. See your matches now.
+Shopping for a practical SUV?
+Answer a few quick questions and we'll match you to current local inventory based on what you want to drive.
+It takes about a minute from your phone, then you can request a visit.
+See your matches now.
 ```
 
 ### Headlines (pick/rotate 3)
-1. Find a Vehicle That Fits Your Budget
-2. Match Your Monthly, Match Your Ride
-3. Vehicles That Fit — Not the Other Way Around
+1. Start Your SUV Request
+2. Shop Local SUV Options
+3. Submit Your Vehicle Request
 
 ### Description
 ```
-Quick match to vehicles that fit your budget. All online.
+Start your local SUV request online.
 ```
 
-> **Compliance note for this angle:** talk about *monthly budget / what fits you* — never rates, APR, approval, terms, or credit. This is about matching inventory to a comfort level, not offering financing.
+> **Compliance note for this angle:** keep the copy about vehicle type, features, availability, convenience, and the shopper's request. Do not present a financial offer.
 
 ---
 
-## 3. AD SET C — Fresh Deals / Recently Reduced Angle ($15/day)
+## 3. AD SET C — Current Local Inventory Angle ($15/day)
 
 **Destination URL**
 ```
-https://YOURDOMAIN.com/?utm_source=meta&utm_medium=paid_social&utm_campaign=sa-auto-match-poc&utm_content=freshdeals
+https://sa-auto-match.vercel.app/?utm_source=meta&utm_medium=paid_social&utm_campaign=sa-auto-match-poc&utm_content=inventory
 ```
 
 ### Primary text — Variant C1
 ```
-Prices just dropped on a batch of local inventory.
-We're matching drivers to recently reduced vehicles before they're gone.
-Tell us what you're looking for and we'll send your best current matches.
-New arrivals and price cuts move fast — get in early.
-See what just got cheaper 👇
+Looking for a new SUV near San Antonio?
+We track current local inventory and help shoppers compare options without starting at the dealership.
+Tell us what you're looking for and request a visit when you find a fit.
+See the current vehicle match options 👇
 ```
 
 ### Primary text — Variant C2
 ```
-Fresh inventory. Fresh price cuts. Updated this week.
-Instead of scrolling ten listing sites, tell us what you want once and we'll match you to what's actually available near you right now.
+New arrivals and current local inventory change quickly.
+Tell us what you want once and we'll help narrow down options that are available to confirm.
 Takes under a minute from your phone.
-Don't miss the ones that just got marked down.
+Start your match before you visit.
 ```
 
 ### Headlines (pick/rotate 3)
-1. Recently Reduced Vehicles Near You
-2. Just-Dropped Prices — See Your Matches
-3. Fresh Inventory Updated This Week
+1. Current SUV Options Near You
+2. Request Local Vehicle Details
+3. Explore Current Nissan SUVs
 
 ### Description
 ```
-See recently reduced vehicles matched to what you want.
+Request current SUV details before your visit.
 ```
 
 ---
@@ -222,8 +219,8 @@ Learning phase is noisy. Don't panic-edit on day one. Judge on **spend milestone
 
 | Angle | utm_content | Live URL (swap domain) |
 |---|---|---|
-| Trade-in | `tradein` | `https://YOURDOMAIN.com/?utm_source=meta&utm_medium=paid_social&utm_campaign=sa-auto-match-poc&utm_content=tradein` |
-| Payment | `payment` | `https://YOURDOMAIN.com/?utm_source=meta&utm_medium=paid_social&utm_campaign=sa-auto-match-poc&utm_content=payment` |
-| Fresh deals | `freshdeals` | `https://YOURDOMAIN.com/?utm_source=meta&utm_medium=paid_social&utm_campaign=sa-auto-match-poc&utm_content=freshdeals` |
+| Trade-in | `tradein` | `https://sa-auto-match.vercel.app/?utm_source=meta&utm_medium=paid_social&utm_campaign=sa-auto-match-poc&utm_content=tradein` |
+| SUV utility | `utility` | `https://sa-auto-match.vercel.app/?utm_source=meta&utm_medium=paid_social&utm_campaign=sa-auto-match-poc&utm_content=utility` |
+| Current inventory | `inventory` | `https://sa-auto-match.vercel.app/?utm_source=meta&utm_medium=paid_social&utm_campaign=sa-auto-match-poc&utm_content=inventory` |
 
 Constant across all: `utm_source=meta` · `utm_medium=paid_social` · `utm_campaign=sa-auto-match-poc`

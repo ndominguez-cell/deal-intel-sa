@@ -8,7 +8,9 @@
 --   trade_year/make/model/mileage -> current_vehicle
 --   has_trade_in -> has_trade
 --   consent -> consent_sms
---   utm_* -> utm jsonb
+--   timeframe -> requested visit timing
+--   utm_* + preferred_contact_window + submission_id -> utm jsonb
+-- A failed ClickUp handoff is marked status = FOLLOW_UP_ERROR for reconciliation.
 
 create extension if not exists "pgcrypto";
 

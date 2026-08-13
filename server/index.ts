@@ -59,8 +59,27 @@ app.use((req, res, next) => {
   next();
 });
 
+async function seedDemoData() {
+  const { runIngestion, runScoring } = await import("./engine/jobs");
+  const ingest = await runIngestion();
+  const score = await runScoring();
+  log(
+    `in-memory demo data ready: ${ingest.processed} listings ingested, ${score.scored} scored`,
+    "storage",
+  );
+}
+
 (async () => {
   await registerRoutes(httpServer, app);
+
+  if (!process.env.DATABASE_URL) {
+    log("DATABASE_URL not set — using in-memory storage with demo data", "storage");
+    try {
+      await seedDemoData();
+    } catch (err) {
+      console.error("Failed to seed demo data:", err);
+    }
+  }
 
   app.use((err: any, _req: Request, res: Response, next: NextFunction) => {
     const status = err.status || err.statusCode || 500;

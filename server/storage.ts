@@ -12,8 +12,9 @@ import {
   type MarketCompsSummary,
   type JobRun,
 } from "@shared/schema";
-import { db } from "./db";
-import { eq, desc, gte, and, sql, lte, ilike } from "drizzle-orm";
+import { getDb } from "./db";
+import { MemStorage } from "./mem-storage";
+import { eq, desc, gte, and, sql, ilike } from "drizzle-orm";
 
 export interface IStorage {
   insertListing(data: InsertListing): Promise<Listing>;
@@ -66,48 +67,52 @@ export interface IStorage {
 }
 
 export class DatabaseStorage implements IStorage {
+  private get db() {
+    return getDb();
+  }
+
   async insertListing(data: InsertListing): Promise<Listing> {
-    const [row] = await db.insert(listings).values(data).returning();
+    const [row] = await this.db.insert(listings).values(data).returning();
     return row;
   }
 
   async updateListingLastSeen(id: number): Promise<void> {
-    await db.update(listings).set({ lastSeenAt: new Date() }).where(eq(listings.id, id));
+    await this.db.update(listings).set({ lastSeenAt: new Date() }).where(eq(listings.id, id));
   }
 
   async getListingById(id: number): Promise<Listing | undefined> {
-    const [row] = await db.select().from(listings).where(eq(listings.id, id));
+    const [row] = await this.db.select().from(listings).where(eq(listings.id, id));
     return row;
   }
 
   async getAllListings(): Promise<Listing[]> {
-    return db.select().from(listings);
+    return this.db.select().from(listings);
   }
 
   async getListingsByMakeModel(make: string, model: string): Promise<Listing[]> {
-    return db
+    return this.db
       .select()
       .from(listings)
       .where(and(ilike(listings.make, make), ilike(listings.model, model)));
   }
 
   async getListingsByCity(city: string): Promise<Listing[]> {
-    return db.select().from(listings).where(ilike(listings.city, city));
+    return this.db.select().from(listings).where(ilike(listings.city, city));
   }
 
   async getListingsCount(): Promise<number> {
-    const [{ count }] = await db
+    const [{ count }] = await this.db
       .select({ count: sql<number>`count(*)::int` })
       .from(listings);
     return count;
   }
 
   async insertSnapshot(listingId: number, price: number | null, mileage: number | null): Promise<void> {
-    await db.insert(listingSnapshots).values({ listingId, price, mileage });
+    await this.db.insert(listingSnapshots).values({ listingId, price, mileage });
   }
 
   async getSnapshotsForListing(listingId: number): Promise<ListingSnapshot[]> {
-    return db
+    return this.db
       .select()
       .from(listingSnapshots)
       .where(eq(listingSnapshots.listingId, listingId))
@@ -116,7 +121,7 @@ export class DatabaseStorage implements IStorage {
 
   async getPriceDropCount24h(): Promise<number> {
     const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
-    const [{ count }] = await db
+    const [{ count }] = await this.db
       .select({ count: sql<number>`count(distinct ${listingSnapshots.listingId})::int` })
       .from(listingSnapshots)
       .where(gte(listingSnapshots.snapshotAt, oneDayAgo));
@@ -124,7 +129,7 @@ export class DatabaseStorage implements IStorage {
   }
 
   async insertDuplicate(canonicalId: number, duplicateId: number, matchType: string): Promise<void> {
-    await db.insert(listingDuplicates).values({
+    await this.db.insert(listingDuplicates).values({
       canonicalListingId: canonicalId,
       duplicateListingId: duplicateId,
       matchType,
@@ -145,7 +150,7 @@ export class DatabaseStorage implements IStorage {
     wholesaleEstimate: number | null;
     suggestedOffer: number | null;
   }): Promise<void> {
-    await db
+    await this.db
       .insert(dealScores)
       .values({
         ...data,
@@ -171,7 +176,7 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getTopDeals(minScore: number, limit: number): Promise<(Listing & { score: DealScore })[]> {
-    const rows = await db
+    const rows = await this.db
       .select()
       .from(dealScores)
       .innerJoin(listings, eq(dealScores.listingId, listings.id))
@@ -186,7 +191,7 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getDealScoreForListing(listingId: number): Promise<DealScore | undefined> {
-    const [row] = await db
+    const [row] = await this.db
       .select()
       .from(dealScores)
       .where(eq(dealScores.listingId, listingId));
@@ -204,7 +209,7 @@ export class DatabaseStorage implements IStorage {
     priceChange30d?: number | null;
     demandVelocity?: string | null;
   }): Promise<void> {
-    const existing = await db
+    const existing = await this.db
       .select()
       .from(marketCompsSummary)
       .where(
@@ -217,7 +222,7 @@ export class DatabaseStorage implements IStorage {
       );
 
     if (existing.length > 0) {
-      await db
+      await this.db
         .update(marketCompsSummary)
         .set({
           medianPrice: data.medianPrice,
@@ -229,7 +234,7 @@ export class DatabaseStorage implements IStorage {
         })
         .where(eq(marketCompsSummary.id, existing[0].id));
     } else {
-      await db.insert(marketCompsSummary).values({
+      await this.db.insert(marketCompsSummary).values({
         ...data,
         createdAt: new Date(),
       });
@@ -237,14 +242,14 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getMarketComps(city: string): Promise<MarketCompsSummary[]> {
-    return db
+    return this.db
       .select()
       .from(marketCompsSummary)
       .where(ilike(marketCompsSummary.city, city));
   }
 
   async getMarketCompsByMakeModel(city: string, make: string, model: string): Promise<MarketCompsSummary | undefined> {
-    const [row] = await db
+    const [row] = await this.db
       .select()
       .from(marketCompsSummary)
       .where(
@@ -258,7 +263,7 @@ export class DatabaseStorage implements IStorage {
   }
 
   async insertJobRun(jobType: string): Promise<JobRun> {
-    const [row] = await db
+    const [row] = await this.db
       .insert(jobsRuns)
       .values({ jobType, status: "running" })
       .returning();
@@ -266,7 +271,7 @@ export class DatabaseStorage implements IStorage {
   }
 
   async completeJobRun(id: number, recordsProcessed: number, errors: string[]): Promise<void> {
-    await db
+    await this.db
       .update(jobsRuns)
       .set({
         status: errors.length > 0 ? "completed_with_errors" : "completed",
@@ -278,4 +283,8 @@ export class DatabaseStorage implements IStorage {
   }
 }
 
-export const storage = new DatabaseStorage();
+// Use Postgres when DATABASE_URL is configured; otherwise fall back to
+// in-memory storage so the app can boot (and be demoed) without a database.
+export const storage: IStorage = process.env.DATABASE_URL
+  ? new DatabaseStorage()
+  : new MemStorage();

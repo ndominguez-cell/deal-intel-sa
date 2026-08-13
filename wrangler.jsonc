@@ -1,0 +1,10 @@
+{
+  // Cloudflare Workers Builds config: deploy the built client as a
+  // static-assets worker. The Express API runs on Railway, not Workers.
+  "name": "deal-intel-sa",
+  "compatibility_date": "2026-08-13",
+  "assets": {
+    "directory": "./dist/public",
+    "not_found_handling": "single-page-application"
+  }
+}

@@ -1,4 +1,5 @@
 import type { InsertListing } from "@shared/schema";
+import type { RawVehicleListing } from "../sources/types";
 import { SA_AREA_CITIES } from "./constants";
 
 const MAKE_CORRECTIONS: Record<string, string> = {
@@ -38,14 +39,14 @@ export function normalizeModel(model: string): string {
   return titleCase(trimmed);
 }
 
-export function sanitizePrice(price: any): number | null {
+export function sanitizePrice(price: unknown): number | null {
   if (price == null) return null;
   const n = typeof price === "string" ? parseFloat(price.replace(/[^0-9.]/g, "")) : Number(price);
   if (isNaN(n) || n <= 0 || n > 500000) return null;
   return Math.round(n * 100) / 100;
 }
 
-export function sanitizeMileage(mileage: any): number | null {
+export function sanitizeMileage(mileage: unknown): number | null {
   if (mileage == null) return null;
   const n = typeof mileage === "string" ? parseInt(mileage.replace(/[^0-9]/g, ""), 10) : Number(mileage);
   if (isNaN(n) || n < 0 || n > 500000) return null;
@@ -59,11 +60,18 @@ export function geocodeCity(city: string | null, state: string | null): { lat: n
   return null;
 }
 
-export function normalizeListing(raw: any, source: string): InsertListing {
-  const make = normalizeMake(raw.make || raw.Make || "");
-  const model = normalizeModel(raw.model || raw.Model || "");
-  const city = raw.city || raw.City || null;
-  const state = raw.state || raw.State || "TX";
+export function normalizeListing(raw: RawVehicleListing, source: string): InsertListing {
+  const rawMake = raw.make ?? "";
+  const rawModel = raw.model ?? "";
+  const year = Number.parseInt(String(raw.year ?? ""), 10);
+  if (!rawMake || !rawModel || !Number.isInteger(year) || year < 1900 || year > 2100) {
+    throw new Error("year, make, and model are required");
+  }
+
+  const make = normalizeMake(rawMake);
+  const model = normalizeModel(rawModel);
+  const city = raw.city || null;
+  const state = raw.state || "TX";
 
   let lat = raw.lat != null ? Number(raw.lat) : null;
   let lon = raw.lon != null ? Number(raw.lon) : null;
@@ -78,25 +86,25 @@ export function normalizeListing(raw: any, source: string): InsertListing {
 
   return {
     source,
-    externalId: raw.external_id || raw.id?.toString() || null,
-    vin: raw.vin || raw.VIN || null,
-    year: parseInt(raw.year || raw.Year, 10),
+    externalId: raw.external_id || null,
+    vin: raw.vin || null,
+    year,
     make,
     model,
-    trim: raw.trim || raw.Trim || null,
-    bodyType: raw.body_type || raw.bodyType || null,
-    price: sanitizePrice(raw.price || raw.Price),
-    mileage: sanitizeMileage(raw.mileage || raw.Mileage || raw.miles),
+    trim: raw.trim || null,
+    bodyType: raw.body_type || null,
+    price: sanitizePrice(raw.price),
+    mileage: sanitizeMileage(raw.mileage),
     city: city ? titleCase(city) : null,
     state: state ? state.toUpperCase() : null,
-    postalCode: raw.postal_code || raw.zip || null,
+    postalCode: raw.postal_code || null,
     lat,
     lon,
-    dealerName: raw.dealer_name || raw.dealerName || null,
-    isDealer: raw.is_dealer ?? raw.isDealer ?? (raw.dealer_name ? true : false),
-    listingUrl: raw.listing_url || raw.listingUrl || raw.url || null,
-    titleStatus: (raw.title_status || raw.titleStatus || "clean").toLowerCase(),
-    imageUrls: raw.image_urls || raw.imageUrls || raw.images || [],
-    rawPayload: raw,
+    dealerName: raw.dealer_name || null,
+    isDealer: raw.is_dealer,
+    listingUrl: raw.listing_url || null,
+    titleStatus: raw.title_status.toLowerCase(),
+    imageUrls: raw.image_urls,
+    rawPayload: raw.raw_payload,
   };
 }

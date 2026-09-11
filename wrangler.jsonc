@@ -1,0 +1,30 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "deal-intel-sa",
+  "main": "./worker/index.ts",
+  "compatibility_date": "2026-09-10",
+  "compatibility_flags": ["nodejs_compat"],
+  "secrets": {
+    "required": ["MARKETCHECK_API_KEY", "AUTODEV_API_KEY"]
+  },
+  "assets": {
+    "not_found_handling": "single-page-application",
+    "run_worker_first": ["/api/*"]
+  },
+  "observability": {
+    "enabled": true,
+    "logs": { "head_sampling_rate": 1 },
+    "traces": { "enabled": true, "head_sampling_rate": 0.1 }
+  },
+  "triggers": {
+    "crons": ["0 12 * * *"]
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "deal-intel-sa-db",
+      "database_id": "989bf4a9-00e9-4f4b-8b69-57000ea1ec29",
+      "migrations_dir": "migrations"
+    }
+  ]
+}

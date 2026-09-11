@@ -1,28 +1,21 @@
-import { useState, useEffect } from "react";
-import { useQuery, useMutation } from "@tanstack/react-query";
-import { queryClient } from "@/lib/queryClient";
+import { useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { 
   Car, 
   MapPin, 
   TrendingDown, 
-  TrendingUp, 
   Search, 
-  Filter, 
   ShieldCheck, 
   AlertTriangle,
   Flame,
   BarChart3,
-  Calendar,
   Gauge,
   Clock,
-  DollarSign,
   CheckCircle2,
   Info,
   Store,
   Zap,
   Target,
-  Loader2,
-  RefreshCw
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -32,13 +25,11 @@ import { Progress } from "@/components/ui/progress";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
-import { Area, AreaChart, ResponsiveContainer } from "recharts";
 import { apiRequest } from "@/lib/api";
 
 const DEALER_DATA = [
   { name: "North Park Toyota", score: "A+", avgMarkup: -3.4, daysToSell: 21, dropFreq: 1.8, listings: 1842, dealFreq: "High" },
   { name: "Bluebonnet Ford", score: "A", avgMarkup: -2.1, daysToSell: 24, dropFreq: 1.2, listings: 1450, dealFreq: "High" },
-  { name: "Ancira Jeep", score: "B+", avgMarkup: -0.5, daysToSell: 31, dropFreq: 2.1, listings: 980, dealFreq: "Medium" },
   { name: "Gunn Honda", score: "B", avgMarkup: 1.2, daysToSell: 28, dropFreq: 0.8, listings: 1120, dealFreq: "Medium" },
 ];
 
@@ -77,23 +68,6 @@ export default function Home() {
   const marketQuery = useQuery({
     queryKey: ["/api/stats/market"],
     queryFn: () => apiRequest("GET", "/api/stats/market?city=San%20Antonio"),
-  });
-
-  const ingestMutation = useMutation({
-    mutationFn: () => apiRequest("POST", "/api/jobs/ingest"),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/deals/top"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/stats/overview"] });
-    },
-  });
-
-  const scoreMutation = useMutation({
-    mutationFn: () => apiRequest("POST", "/api/jobs/score"),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/deals/top"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/stats/overview"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/stats/market"] });
-    },
   });
 
   const deals = dealsQuery.data?.deals || [];
@@ -206,26 +180,10 @@ export default function Home() {
                     onChange={(e) => setSearchQuery(e.target.value)}
                   />
                 </div>
-                <Button 
-                  data-testid="button-ingest"
-                  variant="secondary" 
-                  className="gap-2" 
-                  onClick={() => { ingestMutation.mutate(); }}
-                  disabled={ingestMutation.isPending}
-                >
-                  {ingestMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
-                  <span className="hidden sm:inline">Ingest</span>
-                </Button>
-                <Button 
-                  data-testid="button-score"
-                  variant="secondary" 
-                  className="gap-2" 
-                  onClick={() => { scoreMutation.mutate(); }}
-                  disabled={scoreMutation.isPending}
-                >
-                  {scoreMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Gauge className="w-4 h-4" />}
-                  <span className="hidden sm:inline">Score</span>
-                </Button>
+                <Badge variant="outline" className="h-9 gap-2 px-3 border-emerald-500/30 bg-emerald-500/5 text-emerald-600">
+                  <Clock className="w-4 h-4" />
+                  Daily licensed-market sync · up to $35K
+                </Badge>
               </div>
             </div>
 
@@ -234,19 +192,9 @@ export default function Home() {
               <Card className="bg-card/60 border-border/50 p-12 text-center flex flex-col items-center justify-center mb-8">
                 <Car className="w-16 h-16 text-muted-foreground mb-4" />
                 <h3 className="text-2xl font-bold mb-2">No Data Yet</h3>
-                <p className="text-muted-foreground max-w-md mx-auto mb-6">
-                  Click "Ingest" to load seed listings, then "Score" to compute deal intelligence.
+                <p className="text-muted-foreground max-w-md mx-auto">
+                  The automated daily job will combine qualifying MarketCheck and Auto.dev truck listings, then calculate deal scores.
                 </p>
-                <div className="flex gap-3">
-                  <Button onClick={() => ingestMutation.mutate()} disabled={ingestMutation.isPending}>
-                    {ingestMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
-                    Load Sample Data
-                  </Button>
-                  <Button variant="outline" onClick={() => scoreMutation.mutate()} disabled={scoreMutation.isPending || isEmpty}>
-                    {scoreMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
-                    Run Scoring
-                  </Button>
-                </div>
               </Card>
             )}
 

@@ -26,6 +26,7 @@ export function estimateMarketValue(
   allListings: Listing[]
 ): MarketValueResult | null {
   if (!listing.price || !listing.mileage) return null;
+  const listingMileage = listing.mileage;
 
   const comps = allListings.filter((comp) => {
     if (comp.id === listing.id) return false;
@@ -34,7 +35,7 @@ export function estimateMarketValue(
     if (!comp.price || !comp.mileage) return false;
     if (Math.abs(comp.year - listing.year) > 1) return false;
 
-    const mileageDiff = Math.abs(comp.mileage - listing.mileage) / listing.mileage;
+    const mileageDiff = Math.abs(comp.mileage - listingMileage) / listingMileage;
     if (mileageDiff > 0.2) return false;
 
     if (comp.lat && comp.lon) {

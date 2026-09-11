@@ -1,5 +1,9 @@
 node_modules
 dist
+.wrangler
+.dev.vars*
+.env
+.env.*
 .DS_Store
 server/public
 vite.config.ts.*

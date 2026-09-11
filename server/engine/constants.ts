@@ -113,6 +113,7 @@ export const VEHICLE_SEGMENTS: Record<string, string> = {
   "f150": "full-size trucks",
   "f-150": "full-size trucks",
   "silverado": "full-size trucks",
+  "silverado 1500": "full-size trucks",
   "sierra": "full-size trucks",
   "1500": "full-size trucks",
   "2500": "full-size trucks",

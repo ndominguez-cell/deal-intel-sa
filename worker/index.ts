@@ -17,8 +17,30 @@ function json(data: unknown, init?: ResponseInit): Response {
   return Response.json(data, init);
 }
 
+function parseJsonSafe(value: unknown): unknown {
+  if (typeof value !== "string") return value ?? null;
+  try { return JSON.parse(value); } catch { return value; }
+}
+
 function getStorage(env: WorkerEnv): DatabaseStorage {
   return new DatabaseStorage(env.DB);
+}
+
+async function runTrackedSync(env: WorkerEnv): Promise<Awaited<ReturnType<typeof runLicensedMarketPipeline>>> {
+  const startedAt = Math.floor(Date.now() / 1000);
+  const inserted = await env.DB.prepare("INSERT INTO sync_runs (started_at, status) VALUES (?, 'running') RETURNING id").bind(startedAt).first<{ id: number }>();
+  try {
+    const storage = getStorage(env);
+    const result = await runLicensedMarketPipeline(storage, env, await storage.getActiveVehicleTargets());
+    const status = result.ingestion.processed === 0 ? "empty" : "ok";
+    await env.DB.prepare("UPDATE sync_runs SET finished_at = ?, status = ?, listings_fetched = ?, listings_written = ?, sources_summary = ? WHERE id = ?")
+      .bind(Math.floor(Date.now() / 1000), status, result.sourceCount, result.ingestion.processed, JSON.stringify(result.providers), inserted?.id ?? null).run();
+    return result;
+  } catch (error) {
+    await env.DB.prepare("UPDATE sync_runs SET finished_at = ?, status = 'error', error_message = ? WHERE id = ?")
+      .bind(Math.floor(Date.now() / 1000), error instanceof Error ? error.message : String(error), inserted?.id ?? null).run();
+    throw error;
+  }
 }
 
 function constantTimeEqual(left: ArrayBuffer, right: ArrayBuffer): boolean {
@@ -188,6 +210,14 @@ async function handleDatabaseRequest(request: Request, env: WorkerEnv): Promise<
     });
   }
 
+  if (request.method === "GET" && url.pathname === "/api/jobs/status") {
+    const rows = await env.DB.prepare("SELECT * FROM sync_runs ORDER BY started_at DESC LIMIT 10").all<Record<string, unknown>>();
+    const runs = (rows.results ?? []).map((row) => ({ ...row, sourcesSummary: parseJsonSafe(row.sources_summary) }));
+    const latest = runs[0] as { status?: string; finished_at?: number } | undefined;
+    const healthy = latest?.status === "ok" && Number(latest.finished_at ?? 0) >= Math.floor(Date.now() / 1000) - 36 * 60 * 60;
+    return json({ healthy, runs });
+  }
+
   if (url.pathname === "/api/admin/targets") {
     if (!(await isAuthorized(request, env))) return json({ error: "Unauthorized" }, { status: 401 });
     if (request.method === "GET") return json({ targets: await storage.getActiveVehicleTargets() });
@@ -217,10 +247,9 @@ async function handleDatabaseRequest(request: Request, env: WorkerEnv): Promise<
     if (!(await isAuthorized(request, env))) {
       return json({ error: "Unauthorized" }, { status: 401 });
     }
-    const targets = await storage.getActiveVehicleTargets();
     return json({
       status: "completed",
-      ...(await runLicensedMarketPipeline(storage, env, targets)),
+      ...(await runTrackedSync(env)),
     });
   }
 
@@ -229,8 +258,7 @@ async function handleDatabaseRequest(request: Request, env: WorkerEnv): Promise<
 
 async function runScheduledSync(env: WorkerEnv, scheduledTime: number): Promise<void> {
   try {
-    const storage = getStorage(env);
-    const result = await runLicensedMarketPipeline(storage, env, await storage.getActiveVehicleTargets());
+    const result = await runTrackedSync(env);
     console.log(
       JSON.stringify({
         event: "licensed_market_daily_sync_completed",

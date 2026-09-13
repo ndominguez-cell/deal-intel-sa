@@ -109,13 +109,29 @@ export interface VehicleTarget {
   createdAt: Date;
 }
 
-export type VehicleTargetFilter = {
+export interface VehicleTargetFilter {
   make: string;
   model: string;
   yearMin?: number | null;
   priceMax?: number | null;
   mileageMax?: number | null;
-};
+}
+
+export interface Lead {
+  id: number;
+  name: string;
+  phone: string | null;
+  email: string | null;
+  vehicleMake: string | null;
+  vehicleModel: string | null;
+  listingId: number | null;
+  source: string;
+  utmSource: string | null;
+  utmCampaign: string | null;
+  notes: string | null;
+  status: string;
+  createdAt: Date;
+}
 
 export interface JobRun {
   id: number;

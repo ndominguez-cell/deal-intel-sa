@@ -218,6 +218,33 @@ async function handleDatabaseRequest(request: Request, env: WorkerEnv): Promise<
     return json({ healthy, runs });
   }
 
+  if (request.method === "POST" && url.pathname === "/api/leads") {
+    const body = (await request.json().catch(() => null)) as Record<string, unknown> | null;
+    if (typeof body?.website === "string" && body.website.trim()) return json({ accepted: true }, { status: 202 });
+    const name = typeof body?.name === "string" ? body.name.trim().slice(0, 120) : "";
+    const phone = typeof body?.phone === "string" ? body.phone.trim().slice(0, 40) : "";
+    const email = typeof body?.email === "string" ? body.email.trim().slice(0, 160) : "";
+    if (!name || (!phone && !email)) return json({ error: "name and phone or email are required" }, { status: 400 });
+    const lead = await storage.insertLead({ name, phone: phone || null, email: email || null, vehicleMake: typeof body?.vehicleMake === "string" ? body.vehicleMake.trim().slice(0, 80) : null, vehicleModel: typeof body?.vehicleModel === "string" ? body.vehicleModel.trim().slice(0, 80) : null, listingId: typeof body?.listingId === "number" ? body.listingId : null, source: typeof body?.source === "string" ? body.source.slice(0, 40) : "landing_page", utmSource: typeof body?.utmSource === "string" ? body.utmSource.slice(0, 120) : null, utmCampaign: typeof body?.utmCampaign === "string" ? body.utmCampaign.slice(0, 120) : null, notes: typeof body?.notes === "string" ? body.notes.slice(0, 500) : null });
+    return json({ accepted: true, leadId: lead.id }, { status: 201 });
+  }
+
+  if (url.pathname === "/api/leads" || url.pathname.startsWith("/api/leads/")) {
+    if (!(await isAuthorized(request, env))) return json({ error: "Unauthorized" }, { status: 401 });
+    if (request.method === "GET") {
+      const limit = Math.min(Math.max(Number(url.searchParams.get("limit")) || 50, 1), 250);
+      return json({ leads: await storage.getLeads(limit, url.searchParams.get("status") ?? undefined) });
+    }
+    const leadStatus = url.pathname.match(/^\/api\/leads\/(\d+)\/status$/);
+    if (request.method === "PATCH" && leadStatus) {
+      const body = (await request.json().catch(() => null)) as { status?: unknown } | null;
+      const status = typeof body?.status === "string" ? body.status.trim().slice(0, 40) : "";
+      if (!status) return json({ error: "status is required" }, { status: 400 });
+      await storage.updateLeadStatus(Number(leadStatus[1]), status);
+      return json({ updated: true });
+    }
+  }
+
   if (url.pathname === "/api/admin/targets") {
     if (!(await isAuthorized(request, env))) return json({ error: "Unauthorized" }, { status: 401 });
     if (request.method === "GET") return json({ targets: await storage.getActiveVehicleTargets() });

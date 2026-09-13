@@ -2,6 +2,7 @@ import type {
   DealScore,
   InsertListing,
   JobRun,
+  Lead,
   Listing,
   ListingSnapshot,
   MarketCompsSummary,
@@ -70,6 +71,9 @@ export interface IStorage {
   getActiveVehicleTargets(): Promise<VehicleTarget[]>;
   addVehicleTarget(data: VehicleTargetFilter): Promise<VehicleTarget>;
   deactivateVehicleTarget(id: number): Promise<void>;
+  insertLead(data: Omit<Lead, "id" | "createdAt" | "status"> & { status?: string }): Promise<Lead>;
+  getLeads(limit: number, status?: string): Promise<Lead[]>;
+  updateLeadStatus(id: number, status: string): Promise<void>;
 }
 
 const LISTING_COLUMNS = `
@@ -198,6 +202,17 @@ function vehicleTargetFromRow(row: DbRow): VehicleTarget {
     mileageMax: row.mileage_max != null ? Number(row.mileage_max) : null,
     isActive: boolFromDb(row.is_active),
     createdAt: dateFromDb(row.created_at),
+  };
+}
+
+function leadFromRow(row: DbRow): Lead {
+  return {
+    id: Number(row.id), name: String(row.name),
+    phone: row.phone == null ? null : String(row.phone), email: row.email == null ? null : String(row.email),
+    vehicleMake: row.vehicle_make == null ? null : String(row.vehicle_make), vehicleModel: row.vehicle_model == null ? null : String(row.vehicle_model),
+    listingId: row.listing_id == null ? null : Number(row.listing_id), source: String(row.source),
+    utmSource: row.utm_source == null ? null : String(row.utm_source), utmCampaign: row.utm_campaign == null ? null : String(row.utm_campaign),
+    notes: row.notes == null ? null : String(row.notes), status: String(row.status), createdAt: dateFromDb(row.created_at),
   };
 }
 
@@ -755,5 +770,23 @@ export class DatabaseStorage implements IStorage {
       .prepare("UPDATE vehicle_targets SET is_active = 0 WHERE id = ?")
       .bind(id)
       .run();
+  }
+
+  async insertLead(data: Omit<Lead, "id" | "createdAt" | "status"> & { status?: string }): Promise<Lead> {
+    const row = await this.db.prepare(`INSERT INTO leads (name, phone, email, vehicle_make, vehicle_model, listing_id, source, utm_source, utm_campaign, notes, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING *`)
+      .bind(data.name, data.phone, data.email, data.vehicleMake, data.vehicleModel, data.listingId, data.source, data.utmSource, data.utmCampaign, data.notes, data.status ?? "new").first<DbRow>();
+    if (!row) throw new Error("Lead could not be read after insert");
+    return leadFromRow(row);
+  }
+
+  async getLeads(limit: number, status?: string): Promise<Lead[]> {
+    const rows = status
+      ? await this.all("SELECT * FROM leads WHERE status = ? ORDER BY created_at DESC LIMIT ?", status, limit)
+      : await this.all("SELECT * FROM leads ORDER BY created_at DESC LIMIT ?", limit);
+    return rows.map(leadFromRow);
+  }
+
+  async updateLeadStatus(id: number, status: string): Promise<void> {
+    await this.db.prepare("UPDATE leads SET status = ? WHERE id = ?").bind(status, id).run();
   }
 }

@@ -15,6 +15,7 @@ import {
   stringOrNull,
   type ProviderFetchResult,
   type RawVehicleListing,
+  type VehicleTarget,
 } from "./types";
 
 const MARKETCHECK_URL = "https://api.marketcheck.com/v2/search/car/active";
@@ -70,6 +71,7 @@ export function mapMarketCheckListing(value: unknown): RawVehicleListing | null 
 
 export async function fetchMarketCheckListings(
   apiKey: string,
+  targets: readonly VehicleTarget[] = TARGET_VEHICLES,
 ): Promise<ProviderFetchResult> {
   if (!apiKey.trim()) throw new Error("MARKETCHECK_API_KEY is not configured");
 
@@ -78,7 +80,7 @@ export async function fetchMarketCheckListings(
   let excludedOverPrice = 0;
   let excludedInvalid = 0;
 
-  for (const target of TARGET_VEHICLES) {
+  for (const target of targets) {
     let start = 0;
     let targetCount = 0;
 
@@ -91,9 +93,9 @@ export async function fetchMarketCheckListings(
         car_type: "used",
         make: target.make,
         model: target.model,
-        year_range: `${MIN_MODEL_YEAR}-${new Date().getUTCFullYear()}`,
-        price_range: `${MIN_LISTING_PRICE}-${MAX_LISTING_PRICE}`,
-        miles_range: `0-${MAX_LISTING_MILEAGE}`,
+        year_range: `${target.yearMin ?? MIN_MODEL_YEAR}-${new Date().getUTCFullYear()}`,
+        price_range: `${MIN_LISTING_PRICE}-${target.priceMax ?? MAX_LISTING_PRICE}`,
+        miles_range: `0-${target.mileageMax ?? MAX_LISTING_MILEAGE}`,
         zip: SEARCH_POSTAL_CODE,
         radius: String(SEARCH_RADIUS_MILES),
         rows: String(rows),
@@ -128,7 +130,7 @@ export async function fetchMarketCheckListings(
           excludedOverPrice += 1;
           continue;
         }
-        if (!isEligibleListing(mapped)) {
+        if (!isEligibleListing(mapped, targets)) {
           excludedInvalid += 1;
           continue;
         }

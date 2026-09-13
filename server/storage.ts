@@ -7,6 +7,7 @@ import type {
   MarketCompsSummary,
   ScoreBreakdown,
 } from "@shared/schema";
+import type { VehicleTarget, VehicleTargetFilter } from "@shared/schema";
 
 type DbValue = string | number | boolean | null;
 type DbRow = Record<string, unknown>;
@@ -66,6 +67,9 @@ export interface IStorage {
   insertJobRun(jobType: string): Promise<JobRun>;
   completeJobRun(id: number, recordsProcessed: number, errors: string[]): Promise<void>;
   getLatestJobRun(jobType: string): Promise<JobRun | undefined>;
+  getActiveVehicleTargets(): Promise<VehicleTarget[]>;
+  addVehicleTarget(data: VehicleTargetFilter): Promise<VehicleTarget>;
+  deactivateVehicleTarget(id: number): Promise<void>;
 }
 
 const LISTING_COLUMNS = `
@@ -181,6 +185,19 @@ function jobFromRow(row: DbRow): JobRun {
     completedAt: row.completed_at == null ? null : dateFromDb(row.completed_at),
     recordsProcessed: row.records_processed == null ? null : Number(row.records_processed),
     errors: parseJson<string[]>(row.errors, []),
+  };
+}
+
+function vehicleTargetFromRow(row: DbRow): VehicleTarget {
+  return {
+    id: Number(row.id),
+    make: String(row.make),
+    model: String(row.model),
+    yearMin: row.year_min != null ? Number(row.year_min) : null,
+    priceMax: row.price_max != null ? Number(row.price_max) : null,
+    mileageMax: row.mileage_max != null ? Number(row.mileage_max) : null,
+    isActive: boolFromDb(row.is_active),
+    createdAt: dateFromDb(row.created_at),
   };
 }
 
@@ -706,5 +723,37 @@ export class DatabaseStorage implements IStorage {
       .bind(jobType)
       .first<DbRow>();
     return row ? jobFromRow(row) : undefined;
+  }
+
+  async getActiveVehicleTargets(): Promise<VehicleTarget[]> {
+    return (
+      await this.all(
+        "SELECT * FROM vehicle_targets WHERE is_active = 1 ORDER BY make, model",
+      )
+    ).map(vehicleTargetFromRow);
+  }
+
+  async addVehicleTarget(data: VehicleTargetFilter): Promise<VehicleTarget> {
+    const row = await this.db
+      .prepare(
+        "INSERT INTO vehicle_targets (make, model, year_min, price_max, mileage_max) VALUES (?, ?, ?, ?, ?) RETURNING *",
+      )
+      .bind(
+        data.make,
+        data.model,
+        data.yearMin ?? null,
+        data.priceMax ?? null,
+        data.mileageMax ?? null,
+      )
+      .first<DbRow>();
+    if (!row) throw new Error("Vehicle target could not be read after insert");
+    return vehicleTargetFromRow(row);
+  }
+
+  async deactivateVehicleTarget(id: number): Promise<void> {
+    await this.db
+      .prepare("UPDATE vehicle_targets SET is_active = 0 WHERE id = ?")
+      .bind(id)
+      .run();
   }
 }

@@ -12,6 +12,14 @@ export const TARGET_VEHICLES = [
   { make: "Chevrolet", model: "Silverado 1500" },
 ] as const;
 
+export type VehicleTarget = {
+  make: string;
+  model: string;
+  yearMin?: number | null;
+  priceMax?: number | null;
+  mileageMax?: number | null;
+};
+
 export type InventoryProvider = "marketcheck" | "autodev";
 
 export interface RawVehicleListing {
@@ -81,26 +89,32 @@ export function stringArray(value: unknown): string[] {
     : [];
 }
 
-export function isEligibleListing(listing: RawVehicleListing): boolean {
+export function isEligibleListing(
+  listing: RawVehicleListing,
+  targets: readonly VehicleTarget[] = TARGET_VEHICLES,
+): boolean {
   const year = numberOrNull(listing.year);
   const price = numberOrNull(listing.price);
   const mileage = numberOrNull(listing.mileage);
   const make = listing.make?.trim().toLowerCase();
   const model = listing.model?.trim().toLowerCase();
-  const targetMatch = TARGET_VEHICLES.some(
+  const targetMatch = targets.some(
     (target) =>
       target.make.toLowerCase() === make && target.model.toLowerCase() === model,
+  );
+  const target = targets.find(
+    (item) => item.make.toLowerCase() === make && item.model.toLowerCase() === model,
   );
 
   return Boolean(
     targetMatch &&
       year !== null &&
-      year >= MIN_MODEL_YEAR &&
+      year >= (target?.yearMin ?? MIN_MODEL_YEAR) &&
       price !== null &&
       price >= MIN_LISTING_PRICE &&
-      price <= MAX_LISTING_PRICE &&
+      price <= (target?.priceMax ?? MAX_LISTING_PRICE) &&
       mileage !== null &&
       mileage >= 0 &&
-      mileage <= MAX_LISTING_MILEAGE,
+      mileage <= (target?.mileageMax ?? MAX_LISTING_MILEAGE),
   );
 }

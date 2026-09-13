@@ -87,6 +87,36 @@ export interface MarketCompsSummary {
   createdAt: Date;
 }
 
+export interface VehicleTarget {
+  id: number;
+  make: string;
+  model: string;
+  yearMin: number | null;
+  priceMax: number | null;
+  mileageMax: number | null;
+  isActive: boolean;
+  createdAt: Date;
+}
+
+export interface VehicleTarget {
+  id: number;
+  make: string;
+  model: string;
+  yearMin: number | null;
+  priceMax: number | null;
+  mileageMax: number | null;
+  isActive: boolean;
+  createdAt: Date;
+}
+
+export type VehicleTargetFilter = {
+  make: string;
+  model: string;
+  yearMin?: number | null;
+  priceMax?: number | null;
+  mileageMax?: number | null;
+};
+
 export interface JobRun {
   id: number;
   jobType: string;

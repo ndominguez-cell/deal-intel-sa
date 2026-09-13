@@ -14,6 +14,7 @@ import {
   stringOrNull,
   type ProviderFetchResult,
   type RawVehicleListing,
+  type VehicleTarget,
 } from "./types";
 
 const AUTODEV_URL = "https://api.auto.dev/listings";
@@ -63,7 +64,7 @@ export function mapAutoDevListing(value: unknown): RawVehicleListing | null {
   };
 }
 
-function initialUrl(target: (typeof TARGET_VEHICLES)[number]): URL {
+function initialUrl(target: VehicleTarget): URL {
   const url = new URL(AUTODEV_URL);
   const parameters: Record<string, string> = {
     page: "1",
@@ -71,9 +72,9 @@ function initialUrl(target: (typeof TARGET_VEHICLES)[number]): URL {
     sort: "updatedAt.desc",
     "vehicle.make": target.make,
     "vehicle.model": target.model,
-    "vehicle.year": `${MIN_MODEL_YEAR}-${new Date().getUTCFullYear()}`,
-    "retailListing.price": `${MIN_LISTING_PRICE}-${MAX_LISTING_PRICE}`,
-    "retailListing.miles": `0-${MAX_LISTING_MILEAGE}`,
+    "vehicle.year": `${target.yearMin ?? MIN_MODEL_YEAR}-${new Date().getUTCFullYear()}`,
+    "retailListing.price": `${MIN_LISTING_PRICE}-${target.priceMax ?? MAX_LISTING_PRICE}`,
+    "retailListing.miles": `0-${target.mileageMax ?? MAX_LISTING_MILEAGE}`,
     "retailListing.used": "true",
     zip: SEARCH_POSTAL_CODE,
     distance: String(SEARCH_RADIUS_MILES),
@@ -98,6 +99,7 @@ function nextAutoDevUrl(value: unknown): URL | null {
 
 export async function fetchAutoDevListings(
   apiKey: string,
+  targets: readonly VehicleTarget[] = TARGET_VEHICLES,
 ): Promise<ProviderFetchResult> {
   if (!apiKey.trim()) throw new Error("AUTODEV_API_KEY is not configured");
 
@@ -106,7 +108,7 @@ export async function fetchAutoDevListings(
   let excludedOverPrice = 0;
   let excludedInvalid = 0;
 
-  for (const target of TARGET_VEHICLES) {
+  for (const target of targets) {
     let pageUrl: URL | null = initialUrl(target);
     let fetchedForTarget = 0;
     let reportedTargetCount: number | null = null;
@@ -149,7 +151,7 @@ export async function fetchAutoDevListings(
           excludedOverPrice += 1;
           continue;
         }
-        if (!isEligibleListing(mapped)) {
+        if (!isEligibleListing(mapped, targets)) {
           excludedInvalid += 1;
           continue;
         }

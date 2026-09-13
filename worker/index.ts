@@ -9,6 +9,7 @@ import {
   TARGET_VEHICLES,
 } from "../server/sources/types";
 import { DatabaseStorage } from "../server/storage";
+import type { VehicleTargetFilter } from "../shared/schema";
 
 type WorkerEnv = Env & { ADMIN_TOKEN?: string };
 
@@ -187,6 +188,28 @@ async function handleDatabaseRequest(request: Request, env: WorkerEnv): Promise<
     });
   }
 
+  if (url.pathname === "/api/admin/targets") {
+    if (!(await isAuthorized(request, env))) return json({ error: "Unauthorized" }, { status: 401 });
+    if (request.method === "GET") return json({ targets: await storage.getActiveVehicleTargets() });
+    if (request.method === "POST") {
+      const body = (await request.json().catch(() => null)) as Partial<VehicleTargetFilter> | null;
+      const make = typeof body?.make === "string" ? body.make.trim() : "";
+      const model = typeof body?.model === "string" ? body.model.trim() : "";
+      if (!make || !model) return json({ error: "make and model are required" }, { status: 400 });
+      const optionalNumber = (value: unknown): number | null | undefined =>
+        value === null ? null : typeof value === "number" && Number.isFinite(value) ? value : undefined;
+      const target = await storage.addVehicleTarget({ make, model, yearMin: optionalNumber(body?.yearMin), priceMax: optionalNumber(body?.priceMax), mileageMax: optionalNumber(body?.mileageMax) });
+      return json({ target }, { status: 201 });
+    }
+  }
+
+  const targetDelete = url.pathname.match(/^\/api\/admin\/targets\/(\d+)$/);
+  if (request.method === "DELETE" && targetDelete) {
+    if (!(await isAuthorized(request, env))) return json({ error: "Unauthorized" }, { status: 401 });
+    await storage.deactivateVehicleTarget(Number(targetDelete[1]));
+    return json({ status: "deactivated", id: Number(targetDelete[1]) });
+  }
+
   if (request.method === "POST" && url.pathname === "/api/jobs/sync") {
     if (!env.ADMIN_TOKEN) {
       return json({ error: "Manual sync is not configured" }, { status: 503 });
@@ -194,9 +217,10 @@ async function handleDatabaseRequest(request: Request, env: WorkerEnv): Promise<
     if (!(await isAuthorized(request, env))) {
       return json({ error: "Unauthorized" }, { status: 401 });
     }
+    const targets = await storage.getActiveVehicleTargets();
     return json({
       status: "completed",
-      ...(await runLicensedMarketPipeline(storage, env)),
+      ...(await runLicensedMarketPipeline(storage, env, targets)),
     });
   }
 
@@ -205,7 +229,8 @@ async function handleDatabaseRequest(request: Request, env: WorkerEnv): Promise<
 
 async function runScheduledSync(env: WorkerEnv, scheduledTime: number): Promise<void> {
   try {
-    const result = await runLicensedMarketPipeline(getStorage(env), env);
+    const storage = getStorage(env);
+    const result = await runLicensedMarketPipeline(storage, env, await storage.getActiveVehicleTargets());
     console.log(
       JSON.stringify({
         event: "licensed_market_daily_sync_completed",

@@ -17,6 +17,7 @@ import {
   type ProviderFetchResult,
   type ProviderSecrets,
   type RawVehicleListing,
+  type VehicleTarget,
 } from "../sources/types";
 import { getVehicleSegment } from "./constants";
 import { estimateMarketValue } from "./market-value";
@@ -299,12 +300,14 @@ export function mergeProviderListings(
 export async function runLicensedMarketPipeline(
   storage: IStorage,
   secrets: ProviderSecrets,
+  configuredTargets?: readonly VehicleTarget[],
 ): Promise<PipelineResult> {
   const startedAt = new Date();
   const providerNames: InventoryProvider[] = ["marketcheck", "autodev"];
+  const targets = configuredTargets?.length ? configuredTargets : undefined;
   const settled = await Promise.allSettled([
-    fetchMarketCheckListings(secrets.MARKETCHECK_API_KEY),
-    fetchAutoDevListings(secrets.AUTODEV_API_KEY),
+    fetchMarketCheckListings(secrets.MARKETCHECK_API_KEY, targets),
+    fetchAutoDevListings(secrets.AUTODEV_API_KEY, targets),
   ]);
   const completed: ProviderFetchResult[] = [];
   const providers: ProviderRunSummary[] = settled.map((result, index) => {

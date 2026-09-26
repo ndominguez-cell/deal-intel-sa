@@ -62,6 +62,12 @@ export default defineConfig({
       "@assets": path.resolve(import.meta.dirname, "attached_assets"),
     },
   },
+  // Components rely on the automatic JSX runtime and do not import React.
+  // Without @vitejs/plugin-react, Vite falls back to the classic runtime
+  // (React.createElement) and every page crashes on load.
+  esbuild: {
+    jsx: "automatic",
+  },
   css: {
     postcss: {
       plugins: [],

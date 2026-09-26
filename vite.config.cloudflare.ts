@@ -1,6 +1,6 @@
 import { cloudflare } from "@cloudflare/vite-plugin";
 import tailwindcss from "@tailwindcss/vite";
-import { rmSync } from "node:fs";
+import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { defineConfig, type Plugin } from "vite";
 
@@ -23,6 +23,29 @@ function removeGeneratedPreviewSecrets(): Plugin {
   };
 }
 
+// The Cloudflare plugin writes its deploy redirect (.wrangler/deploy/config.json)
+// under the Vite root, which is client/. Cloudflare Workers Builds runs
+// `npx wrangler deploy` from the repo root, so without a root copy of the
+// redirect it deploys the raw wrangler.jsonc and fails on assets.directory.
+function writeRootDeployRedirect(): Plugin {
+  return {
+    name: "write-root-deploy-redirect",
+    apply: "build",
+    enforce: "post",
+    closeBundle() {
+      const dir = path.resolve(import.meta.dirname, ".wrangler", "deploy");
+      mkdirSync(dir, { recursive: true });
+      writeFileSync(
+        path.join(dir, "config.json"),
+        JSON.stringify({
+          configPath: "../../dist/public/deal_intel_sa/wrangler.json",
+          auxiliaryWorkers: [],
+        }),
+      );
+    },
+  };
+}
+
 export default defineConfig({
   plugins: [
     tailwindcss(),
@@ -30,6 +53,7 @@ export default defineConfig({
       configPath: path.resolve(import.meta.dirname, "wrangler.jsonc"),
     }),
     removeGeneratedPreviewSecrets(),
+    writeRootDeployRedirect(),
   ],
   resolve: {
     alias: {

@@ -3,6 +3,7 @@ import {
   RELIABILITY_SCORES,
   SA_DEMAND_BOOSTS,
   SA_DEMAND_PENALTIES,
+  lookupByMakeModel,
 } from "./constants";
 import type { MarketValueResult } from "./market-value";
 
@@ -76,9 +77,8 @@ export function scoreDeal(
     }
   }
 
-  const makeModelKey = `${listing.make.toLowerCase()}_${listing.model.toLowerCase()}`;
-  const demandBoost = SA_DEMAND_BOOSTS[makeModelKey] || 0;
-  const demandPenalty = SA_DEMAND_PENALTIES[makeModelKey] || 0;
+  const demandBoost = lookupByMakeModel(SA_DEMAND_BOOSTS, listing.make, listing.model) || 0;
+  const demandPenalty = lookupByMakeModel(SA_DEMAND_PENALTIES, listing.make, listing.model) || 0;
   localDemand = Math.max(0, Math.min(15, 7.5 + demandBoost + demandPenalty));
 
   const seasonal = getSeasonalFactor();
@@ -91,7 +91,7 @@ export function scoreDeal(
     reasons.push(`Lower local demand for this segment in San Antonio`);
   }
 
-  const reliabilityScore = RELIABILITY_SCORES[makeModelKey];
+  const reliabilityScore = lookupByMakeModel(RELIABILITY_SCORES, listing.make, listing.model);
   if (reliabilityScore != null) {
     reliability = Math.round((reliabilityScore / 100) * 10);
     if (reliabilityScore >= 85) {

@@ -31,6 +31,7 @@ async function runTrackedSync(env: WorkerEnv): Promise<Awaited<ReturnType<typeof
   const inserted = await env.DB.prepare("INSERT INTO sync_runs (started_at, status) VALUES (?, 'running') RETURNING id").bind(startedAt).first<{ id: number }>();
   try {
     const storage = getStorage(env);
+    await storage.ensureVehicleTargets(TARGET_VEHICLES);
     const result = await runLicensedMarketPipeline(storage, env, await storage.getActiveVehicleTargets());
     const status = result.ingestion.processed === 0 ? "empty" : "ok";
     await env.DB.prepare("UPDATE sync_runs SET finished_at = ?, status = ?, listings_fetched = ?, listings_written = ?, sources_summary = ? WHERE id = ?")

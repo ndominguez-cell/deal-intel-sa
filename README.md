@@ -10,9 +10,10 @@ Cloudflare D1, and calculates deal scores from local comparables.
 The Worker runs once per day at `12:00 UTC`:
 
 1. Query MarketCheck and Auto.dev concurrently in bounded, paginated batches.
-2. Keep Ford F-150 and Chevrolet Silverado 1500 listings that are model year
+2. Keep listings of San Antonio's ten most popular vehicles (see
+   `TARGET_VEHICLES` in `server/sources/types.ts`) that are model year
    2020 or newer, priced from $10,000 to $35,000, have no more than 90,000 miles,
-   and are within 100 miles of ZIP code 78205.
+   and are within 45 miles of ZIP code 78250.
 3. Normalize both providers into one schema and deduplicate by VIN.
 4. Insert new vehicles, update existing vehicles, and record price changes.
 5. Mark listings that disappeared from a successful full import as inactive.

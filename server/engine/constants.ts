@@ -1,5 +1,6 @@
-export const SA_CENTROID = { lat: 29.4241, lon: -98.4936 };
-export const DEFAULT_RADIUS_MILES = 100;
+// Centroid of ZIP 78250 (SEARCH_POSTAL_CODE); distances are measured from here.
+export const SA_CENTROID = { lat: 29.5058, lon: -98.6655 };
+export const DEFAULT_RADIUS_MILES = 45;
 
 export const SA_AREA_CITIES: Record<string, { lat: number; lon: number }> = {
   "san antonio": { lat: 29.4241, lon: -98.4936 },
@@ -144,9 +145,35 @@ export const VEHICLE_SEGMENTS: Record<string, string> = {
   "jetta": "sedans",
 };
 
+// Providers name models like "F-150", "CR-V" and "Sierra 1500"; the tables
+// key on "f150", "crv" and "sierra". Try the exact name, then without
+// hyphens, then without a trailing " 1500" trim designation.
+function modelKeyCandidates(model: string): string[] {
+  const exact = model.trim().toLowerCase();
+  const unhyphenated = exact.replace(/-/g, "");
+  const baseModel = (name: string) => name.replace(/ 1500$/, "");
+  return Array.from(new Set([exact, unhyphenated, baseModel(exact), baseModel(unhyphenated)]));
+}
+
+export function lookupByMakeModel<T>(
+  table: Record<string, T>,
+  make: string,
+  model: string,
+): T | undefined {
+  const makeKey = make.trim().toLowerCase();
+  for (const candidate of modelKeyCandidates(model)) {
+    const value = table[`${makeKey}_${candidate}`];
+    if (value !== undefined) return value;
+  }
+  return undefined;
+}
+
 export function getVehicleSegment(model: string): string {
-  const lm = model.toLowerCase();
-  return VEHICLE_SEGMENTS[lm] || "other";
+  for (const candidate of modelKeyCandidates(model)) {
+    const segment = VEHICLE_SEGMENTS[candidate];
+    if (segment) return segment;
+  }
+  return "other";
 }
 
 export function haversineDistance(

@@ -69,6 +69,7 @@ export interface IStorage {
   completeJobRun(id: number, recordsProcessed: number, errors: string[]): Promise<void>;
   getLatestJobRun(jobType: string): Promise<JobRun | undefined>;
   getActiveVehicleTargets(): Promise<VehicleTarget[]>;
+  ensureVehicleTargets(targets: readonly { make: string; model: string }[]): Promise<void>;
   addVehicleTarget(data: VehicleTargetFilter): Promise<VehicleTarget>;
   deactivateVehicleTarget(id: number): Promise<void>;
   insertLead(data: Omit<Lead, "id" | "createdAt" | "status"> & { status?: string }): Promise<Lead>;
@@ -746,6 +747,19 @@ export class DatabaseStorage implements IStorage {
         "SELECT * FROM vehicle_targets WHERE is_active = 1 ORDER BY make, model",
       )
     ).map(vehicleTargetFromRow);
+  }
+
+  // Adds any default target missing from the table. INSERT OR IGNORE against
+  // the unique (make, model) index leaves admin-deactivated targets inactive.
+  async ensureVehicleTargets(targets: readonly { make: string; model: string }[]): Promise<void> {
+    if (targets.length === 0) return;
+    await this.db.batch(
+      targets.map((target) =>
+        this.db
+          .prepare("INSERT OR IGNORE INTO vehicle_targets (make, model) VALUES (?, ?)")
+          .bind(target.make, target.model),
+      ),
+    );
   }
 
   async addVehicleTarget(data: VehicleTargetFilter): Promise<VehicleTarget> {

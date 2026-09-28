@@ -166,7 +166,7 @@ export default function Home() {
               <div>
                 <h2 className="text-3xl font-bold tracking-tight mb-1">Market Intelligence</h2>
                 <p className="text-muted-foreground" data-testid="text-listing-count">
-                  {stats ? `Analyzing ${stats.totalListings.toLocaleString()} active listings within 100 miles of San Antonio.` : "Loading market data..."}
+                  {stats ? `Analyzing ${stats.totalListings.toLocaleString()} active listings within ${stats.automation?.radiusMiles ?? 45} miles of San Antonio.` : "Loading market data..."}
                 </p>
               </div>
               <div className="flex items-center gap-2 w-full md:w-auto">
@@ -231,7 +231,7 @@ export default function Home() {
                         </div>
                       </div>
                       <div className="flex items-center text-xs text-muted-foreground">
-                        <span>Within 100mi radius</span>
+                        <span>Within {stats?.automation?.radiusMiles ?? 45}mi radius</span>
                       </div>
                     </CardContent>
                   </Card>

@@ -21,6 +21,24 @@ export const TARGET_VEHICLES = [
   { make: "Toyota", model: "Corolla" },
 ] as const;
 
+// MarketCheck names Ram's half-ton "Ram 1500 Pickup" / "Ram 1500 Classic" and
+// returns nothing for model "1500". Query with its names, then store results
+// under the app's canonical model so eligibility and scoring keys still match.
+const MARKETCHECK_MODEL_QUERIES: Record<string, string> = {
+  "ram|1500": "Ram 1500 Pickup,Ram 1500 Classic",
+};
+
+export function marketCheckModelQuery(make: string, model: string): string {
+  return MARKETCHECK_MODEL_QUERIES[`${make}|${model}`.toLowerCase()] ?? model;
+}
+
+export function canonicalModel(make: string, model: string): string {
+  if (make.trim().toLowerCase() === "ram" && /^(ram\s+)?1500(\s+(pickup|classic))?$/i.test(model.trim())) {
+    return "1500";
+  }
+  return model;
+}
+
 export type VehicleTarget = {
   make: string;
   model: string;
@@ -106,7 +124,10 @@ export function isEligibleListing(
   const price = numberOrNull(listing.price);
   const mileage = numberOrNull(listing.mileage);
   const make = listing.make?.trim().toLowerCase();
-  const model = listing.model?.trim().toLowerCase();
+  const model =
+    listing.make && listing.model
+      ? canonicalModel(listing.make, listing.model).trim().toLowerCase()
+      : undefined;
   const targetMatch = targets.some(
     (target) =>
       target.make.toLowerCase() === make && target.model.toLowerCase() === model,

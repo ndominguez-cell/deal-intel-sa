@@ -8,59 +8,43 @@ pulls licensed dealer inventory from **MarketCheck** and **Auto.dev**, stores it
 Cloudflare D1, scores each listing against local comparables, and shows the best
 deals on a dashboard.
 
-## Current state (checked live 2026-09-28)
+## Current state (checked live 2026-09-28, 14:20 UTC sync)
 
-- **Live on Cloudflare Workers** (Worker `deal-intel-sa`). Pushes to `main` deploy
-  automatically through Cloudflare Workers Builds.
-- **Syncs are running.** The 8 most recent runs all finished `ok` (17 runs total). Last run: 2026-09-28
-  12:00 UTC, 1,082 listings fetched, 709 written.
-- **Database:** 1,165 listings, all scored. 0 leads captured so far.
-- **Vehicle list in production:** all 10 targets are present in the database.
-  Ram 1500 had 0 listings until the model-name fix; the 13:59 UTC sync brought in 100.
-- **⚠️ Auto.dev is failing on every sync** since the switch to 10 vehicles. Only
-  MarketCheck data is coming in. See **Open items #1**.
+- **Live on Cloudflare Workers** (Worker `deal-intel-sa`), on the **Workers Paid**
+  plan. Pushes to `main` deploy automatically through Cloudflare Workers Builds.
+- **Both providers are syncing.** The 14:20 UTC sync completed for MarketCheck
+  (1,202 found, 809 kept) and Auto.dev (989 found, 668 kept). After de-duplicating
+  by VIN, 1,015 listings were written.
+- **All 10 vehicles have listings.** 0 leads captured so far.
 
-| Vehicle | Listings | Active | Avg price |
-|---|---|---|---|
-| Chevrolet Silverado 1500 | 344 | 182 | $31,058 |
-| Ford F-150 | 257 | 150 | $30,923 |
-| Toyota Camry | 111 | 111 | $29,566 |
-| Toyota Corolla | 111 | 111 | $23,133 |
-| Honda CR-V | 109 | 109 | $30,017 |
-| Toyota RAV4 | 105 | 105 | $30,302 |
-| Toyota Tacoma | 79 | 79 | $31,960 |
-| GMC Sierra 1500 | 37 | 37 | $32,349 |
-| Toyota Tundra | 12 | 12 | $32,537 |
-| Ram 1500 (after fix, 13:59 UTC sync) | 100 | 100 | $29,730 |
+Active listings after the 14:20 UTC sync:
+
+| Vehicle | Active | Avg price |
+|---|---|---|
+| Toyota Camry | 145 | $29,179 |
+| Toyota Corolla | 141 | $22,176 |
+| Toyota RAV4 | 135 | $29,746 |
+| Chevrolet Silverado 1500 | 132 | $31,578 |
+| Honda CR-V | 123 | $30,107 |
+| Ford F-150 | 110 | $30,551 |
+| Ram 1500 | 100 | $29,730 |
+| Toyota Tacoma | 77 | $31,919 |
+| GMC Sierra 1500 | 40 | $32,199 |
+| Toyota Tundra | 12 | $32,492 |
+
+Each provider stores at most 100 listings per vehicle per sync (`MAX_ROWS_PER_TARGET`),
+so Ram 1500 at exactly 100 is hitting that cap.
 
 ## Open items (in priority order)
 
-### 1. Auto.dev fails with "Too many subrequests" — upgraded, verify next sync
+### 1. Auto.dev "Too many subrequests" — resolved
 
-**Status 2026-09-28:** the account was upgraded to **Workers Paid**, but a sync at
-13:59 UTC right after the upgrade still hit the old 50-request cap. `wrangler.jsonc`
-now sets `limits.subrequests: 10000` explicitly, and that redeploy forces the paid
-cap. Confirm the next sync's `sources_summary` shows Auto.dev `completed`. If the
-deploy is ever rejected for this limit, the account is on Free again.
-
-Every sync since the 10-vehicle change logs this for Auto.dev:
-
-> Too many subrequests by single Worker invocation.
-
-The Cloudflare account appears to be on the **Workers Free** plan, which caps a
-single run at **50 outgoing requests**. The paid plan's cap is 10,000, which this
-sync wouldn't reach. Ten vehicles × paginated searches on two providers exceed
-that. MarketCheck finishes first and uses most of the budget, and Auto.dev hits the
-cap. With the Ram fix, MarketCheck makes about 3 more calls per run.
-
-Options:
-- **Recommended:** upgrade to **Workers Paid ($5/month)**. The cap becomes 10,000
-  requests per run and no code change is needed.
-- **Stay free:** split the sync so each provider runs in its own invocation, for
-  example two cron triggers. This is a real code change, because the "mark missing
-  listings inactive" step currently assumes one run covers both providers.
-- **Stay free, simpler:** cut `MAX_ROWS_PER_TARGET` (`server/sources/types.ts`) or
-  the number of vehicles. This means less data.
+Going from 2 to 10 vehicles pushed each sync past the Workers Free plan's
+50-request cap, so Auto.dev failed on every run. Fixed on 2026-09-28: the account
+was upgraded to **Workers Paid**, and `wrangler.jsonc` sets
+`limits.subrequests: 10000`. The limit had to be set explicitly; a sync right after
+the upgrade still hit the old cap until the redeploy. If a deploy is ever rejected
+for this limit, the account has dropped back to Free.
 
 ### 2. Ram 1500 returned nothing — fixed and live
 
@@ -210,8 +194,9 @@ npm run build
   `lookupByMakeModel` / `getVehicleSegment`, and MarketCheck queries go through
   `marketCheckModelQuery`. When adding a vehicle, check its exact model name in
   MarketCheck first.
-- **Request budget:** every vehicle adds outgoing requests per run. Watch Open item
-  #1 before adding more vehicles.
+- **Request budget:** every vehicle adds outgoing requests per run. The Worker runs
+  on Workers Paid with `limits.subrequests: 10000` in `wrangler.jsonc`; don't remove
+  it or drop back to the Free plan, which caps a run at 50.
 
 ## Change history (this cleanup)
 
@@ -222,4 +207,6 @@ npm run build
 | #6 | 45 miles from 78250; San Antonio top-10 vehicles; scoring-key fix |
 | #7 | "Run sync now" button; mobile header layout |
 | #8 | Admin password tolerates stray whitespace; no autofill; show-password toggle |
-| this PR | Ram 1500 search fix; this handoff |
+| #9 | Ram 1500 search fix; this handoff |
+| #10 | Explicit Workers Paid subrequest limit (Auto.dev syncing again) |
+| #11 | Handoff updated with the post-fix sync results |

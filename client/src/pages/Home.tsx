@@ -231,7 +231,7 @@ export default function Home() {
                         </div>
                       </div>
                       <div className="flex items-center text-xs text-muted-foreground">
-                        <span>Within 100mi radius</span>
+                        <span>Within {stats?.automation?.radiusMiles ?? 45}mi radius</span>
                       </div>
                     </CardContent>
                   </Card>

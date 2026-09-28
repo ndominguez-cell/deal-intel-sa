@@ -81,6 +81,8 @@ Cron (12:00 UTC daily) ─┐
                               ├─ filter → normalize → dedupe by VIN
                               ├─ write listings / price snapshots, mark missing inactive
                               └─ score deals, rebuild market segments
+Cron (11:15 UTC daily) ───> Worker: refreshTexasIndex (~81 MarketCheck calls)
+                              └─ store report in market_index_reports
 Browser ─> Worker static assets (React dashboard) ─> /api/* ─> D1
 ```
 
@@ -92,8 +94,9 @@ Browser ─> Worker static assets (React dashboard) ─> /api/* ─> D1
 | Search settings | `server/sources/types.ts` |
 | Scoring tables (reliability, local demand, segments) | `server/engine/constants.ts` |
 | Database access | `server/storage.ts` |
-| Schema | `migrations/0001`–`0006` (D1) |
-| Dashboard | `client/src/pages/Home.tsx`, `client/src/components/RunSyncButton.tsx` |
+| Texas market index | `server/market-index/` (see its section below) |
+| Schema | `migrations/0001`–`0007` (D1) |
+| Dashboard | `client/src/pages/Home.tsx`, `client/src/components/RunSyncButton.tsx`, `client/src/pages/TexasIndex.tsx` |
 | Build/deploy config | `wrangler.jsonc`, `vite.config.cloudflare.ts` |
 
 ### Search settings (`server/sources/types.ts`)
@@ -152,6 +155,8 @@ curl -X POST -H "Authorization: Bearer $ADMIN_TOKEN" https://<worker-url>/api/jo
 | `GET /api/leads`, `…/:id/status` | admin | Read and update leads |
 | `GET`/`POST /api/admin/targets`, `DELETE /api/admin/targets/:id` | admin | Manage the vehicle list |
 | `POST /api/jobs/sync` | admin | Run a sync now |
+| `GET /api/market-index/texas` | — | Latest Texas market index report (sample until the first refresh) |
+| `POST /api/jobs/market-index/texas` | admin | Refresh the Texas market index now |
 
 ### Checking health
 
@@ -167,8 +172,9 @@ status before merging.
 
 **Database migrations are not applied automatically.** After adding a file to
 `migrations/`, run `npm run db:migrate:remote` once (requires `wrangler login`).
-All six current migrations are applied. `0006` was applied before `0005`, which
-is harmless.
+`0001`–`0006` are applied (`0006` before `0005`, which is harmless). **`0007`
+(Texas index) must be applied before PR #13 deploys**, or `/api/market-index/texas`
+returns 500.
 
 ### Local development
 
@@ -178,29 +184,25 @@ npm run db:migrate:local
 # create .dev.vars with MARKETCHECK_API_KEY and AUTODEV_API_KEY
 npm run dev          # Vite + Worker at http://localhost:5173
 npm run check        # Worker types + typecheck
+npm test             # unit tests (server/**/*.test.ts)
 npm run build
 ```
 
-## Next project: port the Texas Used Car Market Index from Auto-Intel
+## Texas Used Car Market Index (`/texas-index`)
 
-A statewide Texas used-car price index page was built for the older Express/Vercel
-app in the **Auto-Intel** repo and needs to be ported into this Cloudflare Worker.
+A statewide Texas used-car price index page, ported from the older Express/Vercel
+app in the **Auto-Intel** repo (branch `claude/quirky-turing-u9kfsy`, commit
+`f763e9a`). **Auto-Intel PR #4** stays open there as the reference copy; don't merge
+or close it. It's linked as "Texas Index" in the dashboard header.
 
-### Where the code is
-
-- **Repo:** `ndominguez-cell/Auto-Intel`, branch **`claude/quirky-turing-u9kfsy`**
-  (commit `f763e9a`). **PR #4** ("Add Texas Used Car Market Index") stays open as
-  the reference copy. Don't merge or close it as part of the port.
-- **Files to reuse**, all under `Deal-Intel-SA/` in that repo:
-
-| File | What it is | Port approach |
-|---|---|---|
-| `server/market-index/texas.ts` (437 lines) | Types, pure index math, MarketCheck client, report builder, sample report | Copy almost as-is. It only uses `fetch`, `URL` and `setTimeout`, all available in Workers. |
-| `server/market-index/texas.test.ts` (110 lines) | `node:test` unit tests (run there with `tsx --test`) | Copy. This repo has no test script yet, so add `"test": "tsx --test server/**/*.test.ts"` and `tsx` as a dev dependency. |
-| `client/src/pages/TexasIndex.tsx` (360 lines) | React page with the headline, index chart, segment/metro/make tables | Copy, then fix one import: it uses `@/components/SiteHeader`, which **doesn't exist here**. This repo's header is inline in `client/src/pages/Home.tsx`, so either extract it into a shared component or render a simple header. `recharts` and `@/lib/api` (`apiRequest`) are already present and compatible. Add route `/texas-index` in `client/src/App.tsx` and a link from the Home header nav. |
-
-For reference only (not copied as-is): `server/market-index/job.ts` (the refresh job,
-23 lines) and three routes in `server/routes.ts` at lines 315–350.
+| Piece | Where |
+|---|---|
+| Index math, MarketCheck client, report builder, sample report | `server/market-index/texas.ts` |
+| Unit tests (`npm test`) | `server/market-index/texas.test.ts` |
+| Refresh job | `server/market-index/job.ts` |
+| Storage | `market_index_reports` table (`migrations/0007`), `saveMarketIndexReport` / `getLatestMarketIndexReport` in `server/storage.ts` |
+| Routes and cron dispatch | `worker/index.ts` |
+| Page | `client/src/pages/TexasIndex.tsx` |
 
 ### What the feature does
 
@@ -215,69 +217,52 @@ It uses two MarketCheck endpoints: `/v2/search/car/active` (current inventory) a
   RGV, Corpus Christi; 35-mile radius each), and for the top makes: active supply,
   30-day sales, median ask and sold price, days of supply, and days on market.
 
-### Cloudflare changes needed
+### How it runs on Cloudflare
 
-1. **Cron Trigger instead of Vercel Cron.** Auto-Intel refreshes daily at
-   `15 11 * * *` through Vercel Cron hitting `GET /api/cron/market-index/texas` with a
-   `CRON_SECRET`. Here, add a second entry to `triggers.crons` in `wrangler.jsonc`
-   (for example `"15 11 * * *"`). The existing `scheduled()` handler in
-   `worker/index.ts` currently always runs the inventory sync, so it must switch on
-   `controller.cron` to run the right job. Drop the cron HTTP route and
-   `CRON_SECRET`; keep the admin-only manual refresh
-   (`POST /api/jobs/market-index/texas`) behind `isAuthorized` / `ADMIN_TOKEN`.
-2. **Storage in D1** (this repo uses D1 binding `DB`, not Hyperdrive or Postgres).
-   Auto-Intel stores each report in a Postgres table `market_index_reports`
-   (`id`, `region`, `source`, `as_of`, `payload jsonb`, `created_at`, index on
-   `(region, as_of)`). Add `migrations/0007_market_index_reports.sql` with the same
-   columns, storing `payload` as JSON text, plus `saveMarketIndexReport` /
-   `getLatestMarketIndexReport` on `DatabaseStorage` in `server/storage.ts`.
-   **Migrations are not applied by deploys.** Run `npm run db:migrate:remote` once
-   after merging, or the first refresh will fail.
-3. **Secrets:** reuse the existing `MARKETCHECK_API_KEY`. Nothing new is needed.
-4. **Routes:** `GET /api/market-index/texas` (public) returns the latest stored
-   report, or the sample report if there is none, plus `marketCheckConfigured`. Add
-   it to `handleDatabaseRequest` in `worker/index.ts`.
+- **Daily cron at 11:15 UTC** (`15 11 * * *`, the second entry in
+  `triggers.crons`), 45 minutes before the inventory sync. `scheduled()` in
+  `worker/index.ts` runs the index refresh when `controller.cron` matches
+  `TEXAS_INDEX_CRON` and the inventory sync for any other cron. If you retime the
+  index cron, change both places. Auto-Intel's Vercel Cron route and `CRON_SECRET`
+  were dropped.
+- **Manual refresh:** `POST /api/jobs/market-index/texas` with the `ADMIN_TOKEN`
+  bearer token. It returns the real error with a 502 if the refresh fails.
+- **Public read:** `GET /api/market-index/texas` returns the latest stored report,
+  or the sample report if none exists, plus `marketCheckConfigured`.
+- **Storage:** each refresh inserts one row into D1 `market_index_reports`
+  (payload stored as JSON text). The page reads the newest row.
+- **Secrets:** reuses `MARKETCHECK_API_KEY`. Nothing new.
+- **Job history:** each refresh logs a `jobs_runs` row with `job_type =
+  'market_index_tx'`, and the cron logs `texas_market_index_refresh_completed` /
+  `_failed` events.
 
 ### API usage and the subrequest limit
 
 Each refresh makes about **81 MarketCheck calls**: 12 weeks × 4 segments = 48 weekly
-calls, plus 33 snapshot calls (4 statewide + 8 segment + 21 metro). The client
-retries a 429 up to 3 times, so the worst case is about 324 calls. The existing
-inventory sync already uses a large share of the per-run budget. The Worker is on
-**Workers Paid** with `limits.subrequests: 10000`, so the index fits, but:
-- Check that `limits.subrequests` is still set before shipping. On the Free plan's
-  50-request cap, this job fails every time.
-- Run it as its **own cron invocation**, not inside the inventory sync. Each gets
-  its own budget and a failure in one can't block the other.
-- Consider routing its calls through `server/sources/http.ts`, which already
-  retries and redacts the API key from error messages. `createMarketCheckFetch`
-  puts the key in the URL but doesn't include the URL in its errors, so either is
-  safe.
-- Watch the MarketCheck plan quota: this adds about 81 calls a day on top of the
-  inventory sync.
+calls, plus 33 snapshot calls (4 statewide + 8 segment + 21 metro). Calls go through
+`server/sources/http.ts` (3 attempts on 429/5xx, 20 s timeout, API key redacted
+from errors), so the worst case is about 243. It runs as its own cron invocation,
+so it has its own budget and a failure can't block the inventory sync. This needs
+**Workers Paid** with `limits.subrequests` set; on the Free plan's 50-request cap
+it fails every time. It adds about 81 MarketCheck calls a day to the plan quota.
 
 ### Sample data: labeled, and trends never simulated
 
-The page shows sample data until the first live refresh. It must be labeled
-("Sample data" badge and banner; the page already does this when
-`report.source === "demo"`), and **the trends must never be simulated.**
+Until the first live refresh, the page shows a sample report with a "Sample data"
+badge and banner (`report.source === "demo"`). **Trends are never simulated.**
+Auto-Intel's sample report drew its 12-week series with a sine wave; the port
+removed that:
+- `buildDemoTexasIndex()` returns `series: []`, and `indexValue`, the 1-, 4- and
+  12-week changes, each segment's `change4w` and each metro's `priceChange30d`
+  are all `null`.
+- The page hides both charts and the change figures unless the report is live
+  with a real series, and shows "The trend appears after the first live refresh."
+- Tests in `texas.test.ts` lock this in.
 
-> ⚠️ **The current Auto-Intel code breaks the second rule.** `buildDemoTexasIndex()`
-> in `texas.ts` fabricates the 12-week series with a sine wave (`Math.sin(...)`),
-> so the index chart and the 1-, 4- and 12-week changes in sample mode are made-up
-> movement. Its own comment and the page banner call the weekly movement
-> "illustrative". Fix this during the port:
-> - The sample report returns `series: []` and `null` for `change1w`, `change4w`,
->   `change12w` and each segment's `change4w`.
-> - `TexasIndex.tsx` hides the index chart and the change figures when
->   `report.source === "demo"`, and shows something like "Trend appears after the
->   first live refresh."
-> - Update the banner wording and the `texas.test.ts` expectations to match.
->
-> The labeled sample snapshot figures can stay: statewide totals from a real
-> September 2026 pull, and illustrative metro and make splits.
+The sample snapshot figures stay, labeled: statewide totals from a real September
+2026 MarketCheck pull, and illustrative segment, metro and make splits.
 
-These are **not** simulation, so keep them in the live path:
+These are **not** simulation, so they stay in the live path:
 - `computeIndexSeries` carries a segment's last real median forward for weeks
   with fewer than 30 sales.
 - `mergeWeeks` combines stored weeks with fresh ones.
@@ -286,14 +271,14 @@ These are **not** simulation, so keep them in the live path:
 - `job.ts` refuses to save a refresh that returned nothing, so the last good
   report stays up.
 
-### Done when
+### Checking it
 
-- `npm run check`, `npm run build` and the ported tests pass.
-- The migration is applied remotely.
-- A manual refresh (`POST /api/jobs/market-index/texas` with `ADMIN_TOKEN`) stores
-  a `source: "marketcheck"` report, and the page shows it with the sample banner
-  gone.
-- The daily cron entry is in `wrangler.jsonc`, and the next scheduled run succeeds.
+- After the first refresh, the page shows "Source: MarketCheck" and the sample
+  banner is gone.
+- In D1: `SELECT id, source, as_of FROM market_index_reports ORDER BY id DESC LIMIT 5;`
+  and `SELECT * FROM jobs_runs WHERE job_type = 'market_index_tx' ORDER BY id DESC LIMIT 5;`
+- The trend builds up over time: the first live refresh already covers 12 weeks,
+  and each daily refresh merges fresh weeks into the stored history.
 
 ## Gotchas already hit (don't reintroduce)
 
@@ -324,3 +309,5 @@ These are **not** simulation, so keep them in the live path:
 | #9 | Ram 1500 search fix; this handoff |
 | #10 | Explicit Workers Paid subrequest limit (Auto.dev syncing again) |
 | #11 | Handoff updated with the post-fix sync results |
+| #12 | Texas Market Index port plan |
+| #13 | Texas Used Car Market Index ported from Auto-Intel |

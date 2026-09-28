@@ -12,7 +12,8 @@
     "run_worker_first": ["/api/*"]
   },
   // Workers Paid: each sync makes ~2 provider calls per vehicle per page
-  // across MarketCheck and Auto.dev, well over the Free plan's 50-request cap.
+  // across MarketCheck and Auto.dev, and the Texas index refresh makes ~81
+  // (up to ~243 with retries), well over the Free plan's 50-request cap.
   "limits": {
     "subrequests": 10000
   },
@@ -21,8 +22,10 @@
     "logs": { "head_sampling_rate": 1 },
     "traces": { "enabled": true, "head_sampling_rate": 0.1 }
   },
+  // The Texas index cron must match TEXAS_INDEX_CRON in worker/index.ts:
+  // 12:00 UTC inventory sync, 11:15 UTC Texas market index refresh (~81 MarketCheck calls).
   "triggers": {
-    "crons": ["0 12 * * *"]
+    "crons": ["0 12 * * *", "15 11 * * *"]
   },
   "d1_databases": [
     {

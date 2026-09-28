@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { 
+import { Link } from "wouter";
+import {
   Car, 
   MapPin, 
   TrendingDown, 
@@ -125,7 +126,15 @@ export default function Home() {
               <p className="text-[10px] text-muted-foreground uppercase tracking-wider font-semibold">Automotive Market Intelligence</p>
             </div>
           </div>
-          
+
+          <Link
+            href="/texas-index"
+            data-testid="nav-texas-index-mobile"
+            className="md:hidden text-sm font-medium text-muted-foreground hover:text-primary"
+          >
+            Texas Index
+          </Link>
+
           <div className="hidden md:flex items-center gap-6">
             <nav className="flex items-center gap-4 text-sm font-medium h-16">
               <button 
@@ -149,6 +158,13 @@ export default function Home() {
               >
                 Market Index
               </button>
+              <Link
+                href="/texas-index"
+                data-testid="nav-texas-index"
+                className="h-full px-2 flex items-center transition-colors text-muted-foreground hover:text-primary"
+              >
+                Texas Index
+              </Link>
             </nav>
             <div className="h-4 w-[1px] bg-border"></div>
             <Button variant="outline" size="sm" className="gap-2">

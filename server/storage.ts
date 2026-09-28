@@ -9,6 +9,7 @@ import type {
   ScoreBreakdown,
 } from "@shared/schema";
 import type { VehicleTarget, VehicleTargetFilter } from "@shared/schema";
+import type { TexasIndexReport } from "./market-index/texas";
 
 type DbValue = string | number | boolean | null;
 type DbRow = Record<string, unknown>;
@@ -739,6 +740,21 @@ export class DatabaseStorage implements IStorage {
       .bind(jobType)
       .first<DbRow>();
     return row ? jobFromRow(row) : undefined;
+  }
+
+  async saveMarketIndexReport(report: TexasIndexReport): Promise<void> {
+    await this.db
+      .prepare("INSERT INTO market_index_reports (region, source, as_of, payload) VALUES (?, ?, ?, ?)")
+      .bind(report.region, report.source, report.asOf, JSON.stringify(report))
+      .run();
+  }
+
+  async getLatestMarketIndexReport(region: string): Promise<TexasIndexReport | undefined> {
+    const row = await this.db
+      .prepare("SELECT payload FROM market_index_reports WHERE region = ? ORDER BY as_of DESC, id DESC LIMIT 1")
+      .bind(region)
+      .first<{ payload: string }>();
+    return row ? (JSON.parse(row.payload) as TexasIndexReport) : undefined;
   }
 
   async getActiveVehicleTargets(): Promise<VehicleTarget[]> {

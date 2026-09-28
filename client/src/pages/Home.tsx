@@ -26,6 +26,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { apiRequest } from "@/lib/api";
+import { RunSyncButton } from "@/components/RunSyncButton";
 
 const DEALER_DATA = [
   { name: "North Park Toyota", score: "A+", avgMarkup: -3.4, daysToSell: 21, dropFreq: 1.8, listings: 1842, dealFreq: "High" },
@@ -162,15 +163,15 @@ export default function Home() {
         
         {activeNav === "intelligence" && (
           <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
-            <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-8">
+            <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4 mb-8">
               <div>
                 <h2 className="text-3xl font-bold tracking-tight mb-1">Market Intelligence</h2>
                 <p className="text-muted-foreground" data-testid="text-listing-count">
                   {stats ? `Analyzing ${stats.totalListings.toLocaleString()} active listings within ${stats.automation?.radiusMiles ?? 45} miles of San Antonio.` : "Loading market data..."}
                 </p>
               </div>
-              <div className="flex items-center gap-2 w-full md:w-auto">
-                <div className="relative flex-1 md:w-64">
+              <div className="flex flex-wrap lg:flex-nowrap items-center gap-2 w-full lg:w-auto">
+                <div className="relative flex-1 min-w-full sm:min-w-0 lg:w-64">
                   <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
                   <Input 
                     data-testid="input-search"
@@ -184,6 +185,7 @@ export default function Home() {
                   <Clock className="w-4 h-4" />
                   Daily licensed-market sync · up to $35K
                 </Badge>
+                <RunSyncButton />
               </div>
             </div>
 

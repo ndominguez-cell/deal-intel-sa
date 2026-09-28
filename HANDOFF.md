@@ -15,8 +15,8 @@ deals on a dashboard.
 - **Syncs are running.** The 8 most recent runs all finished `ok` (17 runs total). Last run: 2026-09-28
   12:00 UTC, 1,082 listings fetched, 709 written.
 - **Database:** 1,165 listings, all scored. 0 leads captured so far.
-- **Vehicle list in production:** all 10 targets are present in the database, but
-  **Ram 1500 has 0 listings** (fixed in the PR that adds this file; see below).
+- **Vehicle list in production:** all 10 targets are present in the database.
+  Ram 1500 had 0 listings until the model-name fix; the 13:59 UTC sync brought in 100.
 - **⚠️ Auto.dev is failing on every sync** since the switch to 10 vehicles. Only
   MarketCheck data is coming in. See **Open items #1**.
 
@@ -31,11 +31,17 @@ deals on a dashboard.
 | Toyota Tacoma | 79 | 79 | $31,960 |
 | GMC Sierra 1500 | 37 | 37 | $32,349 |
 | Toyota Tundra | 12 | 12 | $32,537 |
-| Ram 1500 | 0 | 0 | — |
+| Ram 1500 (after fix, 13:59 UTC sync) | 100 | 100 | $29,730 |
 
 ## Open items (in priority order)
 
-### 1. Auto.dev fails with "Too many subrequests" — needs a decision
+### 1. Auto.dev fails with "Too many subrequests" — upgraded, verify next sync
+
+**Status 2026-09-28:** the account was upgraded to **Workers Paid**, but a sync at
+13:59 UTC right after the upgrade still hit the old 50-request cap. `wrangler.jsonc`
+now sets `limits.subrequests: 10000` explicitly, and that redeploy forces the paid
+cap. Confirm the next sync's `sources_summary` shows Auto.dev `completed`. If the
+deploy is ever rejected for this limit, the account is on Free again.
 
 Every sync since the 10-vehicle change logs this for Auto.dev:
 
@@ -56,13 +62,14 @@ Options:
 - **Stay free, simpler:** cut `MAX_ROWS_PER_TARGET` (`server/sources/types.ts`) or
   the number of vehicles. This means less data.
 
-### 2. Ram 1500 returned nothing — fixed, pending merge
+### 2. Ram 1500 returned nothing — fixed and live
 
 MarketCheck names this truck `Ram 1500 Pickup` / `Ram 1500 Classic`, and a search
 for model `1500` returns zero. The fix (`server/sources/types.ts`,
 `marketcheck.ts`, `autodev.ts`) searches MarketCheck with its names, then stores
 results under the app's standard model `1500` so filtering and scoring still match.
-MarketCheck shows about 120 qualifying Ram 1500s within 45 miles.
+MarketCheck shows about 120 qualifying Ram 1500s within 45 miles. The first sync after
+the fix stored 100, the per-vehicle cap (`MAX_ROWS_PER_TARGET`).
 
 ### 3. Leftover integrations on this repo
 

@@ -1,6 +1,6 @@
 import { useState, type FormEvent } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { CheckCircle2, Loader2, RefreshCw, XCircle } from "lucide-react";
+import { CheckCircle2, Eye, EyeOff, Loader2, RefreshCw, XCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -60,7 +60,9 @@ async function runSync(token: string): Promise<SyncResult> {
     method: "POST",
     headers: { Authorization: `Bearer ${token}` },
   });
-  if (res.status === 401) throw new Error("Wrong password. Check the ADMIN_TOKEN secret in Cloudflare.");
+  if (res.status === 401) throw new Error(
+      "Wrong password. It must match the ADMIN_TOKEN secret on the deal-intel-sa Worker exactly (case-sensitive). Use the eye icon to check what was entered.",
+    );
   if (res.status === 503) {
     throw new Error(
       "Manual sync isn't set up yet. In Cloudflare, add a secret named ADMIN_TOKEN to the deal-intel-sa Worker, then try again.",
@@ -77,6 +79,7 @@ export function RunSyncButton() {
   const queryClient = useQueryClient();
   const [open, setOpen] = useState(false);
   const [token, setToken] = useState(readSavedToken);
+  const [showToken, setShowToken] = useState(false);
   const [running, setRunning] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<SyncResult | null>(null);
@@ -128,16 +131,31 @@ export function RunSyncButton() {
 
         {!result && (
           <form onSubmit={handleSubmit} className="space-y-4" id="run-sync-form">
-            <Input
-              type="password"
-              autoComplete="current-password"
-              placeholder="Admin password (ADMIN_TOKEN)"
-              value={token}
-              onChange={(e) => setToken(e.target.value)}
-              disabled={running}
-              autoFocus
-              data-testid="input-admin-token"
-            />
+            <div className="relative">
+              <Input
+                type={showToken ? "text" : "password"}
+                // Keep password managers from filling a different saved password.
+                autoComplete="off"
+                data-1p-ignore
+                data-lpignore="true"
+                placeholder="Admin password (ADMIN_TOKEN)"
+                value={token}
+                onChange={(e) => setToken(e.target.value)}
+                disabled={running}
+                autoFocus
+                className="pr-10"
+                data-testid="input-admin-token"
+              />
+              <button
+                type="button"
+                onClick={() => setShowToken((v) => !v)}
+                className="absolute right-2.5 top-2.5 text-muted-foreground hover:text-foreground"
+                aria-label={showToken ? "Hide password" : "Show password"}
+                data-testid="button-toggle-token"
+              >
+                {showToken ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+              </button>
+            </div>
             {running && (
               <p className="flex items-center gap-2 text-sm text-muted-foreground">
                 <Loader2 className="w-4 h-4 animate-spin" />

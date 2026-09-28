@@ -58,12 +58,15 @@ function constantTimeEqual(left: ArrayBuffer, right: ArrayBuffer): boolean {
 }
 
 async function isAuthorized(request: Request, env: WorkerEnv): Promise<boolean> {
-  if (!env.ADMIN_TOKEN) return false;
-  const provided = request.headers.get("authorization")?.replace(/^Bearer\s+/i, "") ?? "";
+  // Trim both sides: secrets pasted into the Cloudflare dashboard often carry
+  // a trailing space or newline, which would otherwise reject the right password.
+  const expected = env.ADMIN_TOKEN?.trim();
+  if (!expected) return false;
+  const provided = (request.headers.get("authorization") ?? "").replace(/^Bearer\s+/i, "").trim();
   const encoder = new TextEncoder();
   const [providedHash, expectedHash] = await Promise.all([
     crypto.subtle.digest("SHA-256", encoder.encode(provided)),
-    crypto.subtle.digest("SHA-256", encoder.encode(env.ADMIN_TOKEN)),
+    crypto.subtle.digest("SHA-256", encoder.encode(expected)),
   ]);
   return constantTimeEqual(providedHash, expectedHash);
 }
@@ -269,7 +272,7 @@ async function handleDatabaseRequest(request: Request, env: WorkerEnv): Promise<
   }
 
   if (request.method === "POST" && url.pathname === "/api/jobs/sync") {
-    if (!env.ADMIN_TOKEN) {
+    if (!env.ADMIN_TOKEN?.trim()) {
       return json({ error: "Manual sync is not configured" }, { status: 503 });
     }
     if (!(await isAuthorized(request, env))) {

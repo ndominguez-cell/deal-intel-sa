@@ -181,6 +181,120 @@ npm run check        # Worker types + typecheck
 npm run build
 ```
 
+## Next project: port the Texas Used Car Market Index from Auto-Intel
+
+A statewide Texas used-car price index page was built for the older Express/Vercel
+app in the **Auto-Intel** repo and needs to be ported into this Cloudflare Worker.
+
+### Where the code is
+
+- **Repo:** `ndominguez-cell/Auto-Intel`, branch **`claude/quirky-turing-u9kfsy`**
+  (commit `f763e9a`). **PR #4** ("Add Texas Used Car Market Index") stays open as
+  the reference copy. Don't merge or close it as part of the port.
+- **Files to reuse**, all under `Deal-Intel-SA/` in that repo:
+
+| File | What it is | Port approach |
+|---|---|---|
+| `server/market-index/texas.ts` (437 lines) | Types, pure index math, MarketCheck client, report builder, sample report | Copy almost as-is. It only uses `fetch`, `URL` and `setTimeout`, all available in Workers. |
+| `server/market-index/texas.test.ts` (110 lines) | `node:test` unit tests (run there with `tsx --test`) | Copy. This repo has no test script yet, so add `"test": "tsx --test server/**/*.test.ts"` and `tsx` as a dev dependency. |
+| `client/src/pages/TexasIndex.tsx` (360 lines) | React page with the headline, index chart, segment/metro/make tables | Copy, then fix one import: it uses `@/components/SiteHeader`, which **doesn't exist here**. This repo's header is inline in `client/src/pages/Home.tsx`, so either extract it into a shared component or render a simple header. `recharts` and `@/lib/api` (`apiRequest`) are already present and compatible. Add route `/texas-index` in `client/src/App.tsx` and a link from the Home header nav. |
+
+For reference only (not copied as-is): `server/market-index/job.ts` (the refresh job,
+23 lines) and three routes in `server/routes.ts` at lines 315–350.
+
+### What the feature does
+
+It uses two MarketCheck endpoints: `/v2/search/car/active` (current inventory) and
+`/v2/search/car/recents` with `sold=true` (listings that left the market). It builds:
+
+- A **12-week, mix-adjusted price index** (base = 100). Each week's median sold
+  price per body segment (SUV, Pickup, Sedan, Other) is weighted by that segment's
+  share of sales, so a shift in what sold doesn't move the index; only price
+  changes do.
+- Snapshots by segment, for 7 metros (Houston, DFW, San Antonio, Austin, El Paso,
+  RGV, Corpus Christi; 35-mile radius each), and for the top makes: active supply,
+  30-day sales, median ask and sold price, days of supply, and days on market.
+
+### Cloudflare changes needed
+
+1. **Cron Trigger instead of Vercel Cron.** Auto-Intel refreshes daily at
+   `15 11 * * *` through Vercel Cron hitting `GET /api/cron/market-index/texas` with a
+   `CRON_SECRET`. Here, add a second entry to `triggers.crons` in `wrangler.jsonc`
+   (for example `"15 11 * * *"`). The existing `scheduled()` handler in
+   `worker/index.ts` currently always runs the inventory sync, so it must switch on
+   `controller.cron` to run the right job. Drop the cron HTTP route and
+   `CRON_SECRET`; keep the admin-only manual refresh
+   (`POST /api/jobs/market-index/texas`) behind `isAuthorized` / `ADMIN_TOKEN`.
+2. **Storage in D1** (this repo uses D1 binding `DB`, not Hyperdrive or Postgres).
+   Auto-Intel stores each report in a Postgres table `market_index_reports`
+   (`id`, `region`, `source`, `as_of`, `payload jsonb`, `created_at`, index on
+   `(region, as_of)`). Add `migrations/0007_market_index_reports.sql` with the same
+   columns, storing `payload` as JSON text, plus `saveMarketIndexReport` /
+   `getLatestMarketIndexReport` on `DatabaseStorage` in `server/storage.ts`.
+   **Migrations are not applied by deploys.** Run `npm run db:migrate:remote` once
+   after merging, or the first refresh will fail.
+3. **Secrets:** reuse the existing `MARKETCHECK_API_KEY`. Nothing new is needed.
+4. **Routes:** `GET /api/market-index/texas` (public) returns the latest stored
+   report, or the sample report if there is none, plus `marketCheckConfigured`. Add
+   it to `handleDatabaseRequest` in `worker/index.ts`.
+
+### API usage and the subrequest limit
+
+Each refresh makes about **81 MarketCheck calls**: 12 weeks × 4 segments = 48 weekly
+calls, plus 33 snapshot calls (4 statewide + 8 segment + 21 metro). The client
+retries a 429 up to 3 times, so the worst case is about 324 calls. The existing
+inventory sync already uses a large share of the per-run budget. The Worker is on
+**Workers Paid** with `limits.subrequests: 10000`, so the index fits, but:
+- Check that `limits.subrequests` is still set before shipping. On the Free plan's
+  50-request cap, this job fails every time.
+- Run it as its **own cron invocation**, not inside the inventory sync. Each gets
+  its own budget and a failure in one can't block the other.
+- Consider routing its calls through `server/sources/http.ts`, which already
+  retries and redacts the API key from error messages. `createMarketCheckFetch`
+  puts the key in the URL but doesn't include the URL in its errors, so either is
+  safe.
+- Watch the MarketCheck plan quota: this adds about 81 calls a day on top of the
+  inventory sync.
+
+### Sample data: labeled, and trends never simulated
+
+The page shows sample data until the first live refresh. It must be labeled
+("Sample data" badge and banner; the page already does this when
+`report.source === "demo"`), and **the trends must never be simulated.**
+
+> ⚠️ **The current Auto-Intel code breaks the second rule.** `buildDemoTexasIndex()`
+> in `texas.ts` fabricates the 12-week series with a sine wave (`Math.sin(...)`),
+> so the index chart and the 1-, 4- and 12-week changes in sample mode are made-up
+> movement. Its own comment and the page banner call the weekly movement
+> "illustrative". Fix this during the port:
+> - The sample report returns `series: []` and `null` for `change1w`, `change4w`,
+>   `change12w` and each segment's `change4w`.
+> - `TexasIndex.tsx` hides the index chart and the change figures when
+>   `report.source === "demo"`, and shows something like "Trend appears after the
+>   first live refresh."
+> - Update the banner wording and the `texas.test.ts` expectations to match.
+>
+> The labeled sample snapshot figures can stay: statewide totals from a real
+> September 2026 pull, and illustrative metro and make splits.
+
+These are **not** simulation, so keep them in the live path:
+- `computeIndexSeries` carries a segment's last real median forward for weeks
+  with fewer than 30 sales.
+- `mergeWeeks` combines stored weeks with fresh ones.
+- `job.ts` only reuses a previous series when `previous.source === "marketcheck"`,
+  so sample numbers never seed live data.
+- `job.ts` refuses to save a refresh that returned nothing, so the last good
+  report stays up.
+
+### Done when
+
+- `npm run check`, `npm run build` and the ported tests pass.
+- The migration is applied remotely.
+- A manual refresh (`POST /api/jobs/market-index/texas` with `ADMIN_TOKEN`) stores
+  a `source: "marketcheck"` report, and the page shows it with the sample banner
+  gone.
+- The daily cron entry is in `wrangler.jsonc`, and the next scheduled run succeeds.
+
 ## Gotchas already hit (don't reintroduce)
 
 - **Blank screen:** the Cloudflare build must use the automatic JSX runtime

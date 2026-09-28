@@ -1,5 +1,5 @@
 import type { Listing } from "@shared/schema";
-import { SA_CENTROID, haversineDistance } from "./constants";
+import { DEFAULT_RADIUS_MILES, SA_CENTROID, haversineDistance } from "./constants";
 
 export interface MarketValueResult {
   marketValueEst: number;
@@ -43,7 +43,7 @@ export function estimateMarketValue(
         SA_CENTROID.lat, SA_CENTROID.lon,
         comp.lat, comp.lon
       );
-      if (dist > 100) return false;
+      if (dist > DEFAULT_RADIUS_MILES) return false;
     }
 
     return true;

@@ -3,13 +3,22 @@ export const MIN_LISTING_PRICE = 10_000;
 export const MAX_LISTING_PRICE = 35_000;
 export const MAX_LISTING_MILEAGE = 90_000;
 export const MIN_MODEL_YEAR = 2020;
-export const SEARCH_POSTAL_CODE = "78205";
-export const SEARCH_RADIUS_MILES = 100;
+export const SEARCH_POSTAL_CODE = "78250";
+export const SEARCH_RADIUS_MILES = 45;
 export const MAX_ROWS_PER_TARGET = 100;
 
+// San Antonio's ten most popular vehicles (used-market share, 2025 research).
 export const TARGET_VEHICLES = [
   { make: "Ford", model: "F-150" },
   { make: "Chevrolet", model: "Silverado 1500" },
+  { make: "Toyota", model: "Camry" },
+  { make: "Ram", model: "1500" },
+  { make: "Toyota", model: "Tacoma" },
+  { make: "GMC", model: "Sierra 1500" },
+  { make: "Toyota", model: "Tundra" },
+  { make: "Toyota", model: "RAV4" },
+  { make: "Honda", model: "CR-V" },
+  { make: "Toyota", model: "Corolla" },
 ] as const;
 
 export type VehicleTarget = {

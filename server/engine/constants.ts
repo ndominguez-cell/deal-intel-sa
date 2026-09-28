@@ -1,5 +1,6 @@
-export const SA_CENTROID = { lat: 29.4241, lon: -98.4936 };
-export const DEFAULT_RADIUS_MILES = 100;
+// Centroid of ZIP 78250 (SEARCH_POSTAL_CODE); distances are measured from here.
+export const SA_CENTROID = { lat: 29.5058, lon: -98.6655 };
+export const DEFAULT_RADIUS_MILES = 45;
 
 export const SA_AREA_CITIES: Record<string, { lat: number; lon: number }> = {
   "san antonio": { lat: 29.4241, lon: -98.4936 },

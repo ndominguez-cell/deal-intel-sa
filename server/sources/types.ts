@@ -128,16 +128,16 @@ export function isEligibleListing(
     listing.make && listing.model
       ? canonicalModel(listing.make, listing.model).trim().toLowerCase()
       : undefined;
-  const targetMatch = targets.some(
-    (target) =>
-      target.make.toLowerCase() === make && target.model.toLowerCase() === model,
-  );
+  // Targets can be stored under a provider-native name ("Ram 1500 Pickup"),
+  // so canonicalize both sides before comparing.
   const target = targets.find(
-    (item) => item.make.toLowerCase() === make && item.model.toLowerCase() === model,
+    (item) =>
+      item.make.trim().toLowerCase() === make &&
+      canonicalModel(item.make, item.model).trim().toLowerCase() === model,
   );
 
   return Boolean(
-    targetMatch &&
+    target &&
       year !== null &&
       year >= (target?.yearMin ?? MIN_MODEL_YEAR) &&
       price !== null &&

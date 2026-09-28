@@ -275,10 +275,19 @@ async function handleDatabaseRequest(request: Request, env: WorkerEnv): Promise<
     if (!(await isAuthorized(request, env))) {
       return json({ error: "Unauthorized" }, { status: 401 });
     }
-    return json({
-      status: "completed",
-      ...(await runTrackedSync(env)),
-    });
+    // Admin-only route, and provider errors are already key-redacted, so
+    // return the real reason instead of the generic 500 the dashboard can't act on.
+    try {
+      return json({
+        status: "completed",
+        ...(await runTrackedSync(env)),
+      });
+    } catch (error) {
+      return json(
+        { error: error instanceof Error ? error.message : String(error) },
+        { status: 502 },
+      );
+    }
   }
 
   return json({ error: "API route not found" }, { status: 404 });

@@ -26,6 +26,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { apiRequest } from "@/lib/api";
+import { RunSyncButton } from "@/components/RunSyncButton";
 
 const DEALER_DATA = [
   { name: "North Park Toyota", score: "A+", avgMarkup: -3.4, daysToSell: 21, dropFreq: 1.8, listings: 1842, dealFreq: "High" },
@@ -184,6 +185,7 @@ export default function Home() {
                   <Clock className="w-4 h-4" />
                   Daily licensed-market sync · up to $35K
                 </Badge>
+                <RunSyncButton />
               </div>
             </div>
 

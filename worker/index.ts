@@ -1,5 +1,7 @@
 import { SA_CENTROID, haversineDistance } from "../server/engine/constants";
 import { runLicensedMarketPipeline } from "../server/engine/jobs";
+import { refreshTexasIndex } from "../server/market-index/job";
+import { buildDemoTexasIndex } from "../server/market-index/texas";
 import {
   MAX_LISTING_MILEAGE,
   MAX_LISTING_PRICE,
@@ -12,6 +14,11 @@ import { DatabaseStorage } from "../server/storage";
 import type { VehicleTargetFilter } from "../shared/schema";
 
 type WorkerEnv = Env & { ADMIN_TOKEN?: string };
+
+// Must match the second entry in triggers.crons (wrangler.jsonc). Each job runs
+// as its own invocation, so it gets its own subrequest budget and a failure in
+// one can't block the other.
+const TEXAS_INDEX_CRON = "15 11 * * *";
 
 function json(data: unknown, init?: ResponseInit): Response {
   return Response.json(data, init);
@@ -271,6 +278,32 @@ async function handleDatabaseRequest(request: Request, env: WorkerEnv): Promise<
     return json({ status: "deactivated", id: Number(targetDelete[1]) });
   }
 
+  if (request.method === "GET" && url.pathname === "/api/market-index/texas") {
+    const stored = await storage.getLatestMarketIndexReport("TX");
+    return json({
+      report: stored ?? buildDemoTexasIndex(),
+      marketCheckConfigured: Boolean(env.MARKETCHECK_API_KEY?.trim()),
+    });
+  }
+
+  if (request.method === "POST" && url.pathname === "/api/jobs/market-index/texas") {
+    if (!env.ADMIN_TOKEN?.trim()) {
+      return json({ error: "Manual refresh is not configured" }, { status: 503 });
+    }
+    if (!(await isAuthorized(request, env))) {
+      return json({ error: "Unauthorized" }, { status: 401 });
+    }
+    try {
+      const report = await refreshTexasIndex(storage, env.MARKETCHECK_API_KEY);
+      return json({ status: "completed", asOf: report.asOf, weeks: report.series.length, errors: report.errors });
+    } catch (error) {
+      return json(
+        { error: error instanceof Error ? error.message : String(error) },
+        { status: 502 },
+      );
+    }
+  }
+
   if (request.method === "POST" && url.pathname === "/api/jobs/sync") {
     if (!env.ADMIN_TOKEN?.trim()) {
       return json({ error: "Manual sync is not configured" }, { status: 503 });
@@ -325,6 +358,30 @@ async function runScheduledSync(env: WorkerEnv, scheduledTime: number): Promise<
   }
 }
 
+async function runScheduledTexasIndex(env: WorkerEnv, scheduledTime: number): Promise<void> {
+  try {
+    const report = await refreshTexasIndex(getStorage(env), env.MARKETCHECK_API_KEY);
+    console.log(
+      JSON.stringify({
+        event: "texas_market_index_refresh_completed",
+        scheduledTime: new Date(scheduledTime).toISOString(),
+        weeks: report.series.length,
+        indexValue: report.headline.indexValue,
+        errors: report.errors.length,
+      }),
+    );
+  } catch (error) {
+    console.error(
+      JSON.stringify({
+        event: "texas_market_index_refresh_failed",
+        scheduledTime: new Date(scheduledTime).toISOString(),
+        error: error instanceof Error ? error.message : String(error),
+      }),
+    );
+    throw error;
+  }
+}
+
 export default {
   async fetch(request, env): Promise<Response> {
     const url = new URL(request.url);
@@ -365,6 +422,12 @@ export default {
   },
 
   async scheduled(controller, env, ctx): Promise<void> {
-    ctx.waitUntil(runScheduledSync(env, controller.scheduledTime));
+    // Any cron other than the index's runs the inventory sync, so retiming
+    // the sync in wrangler.jsonc alone can't silently stop it.
+    if (controller.cron === TEXAS_INDEX_CRON) {
+      ctx.waitUntil(runScheduledTexasIndex(env, controller.scheduledTime));
+    } else {
+      ctx.waitUntil(runScheduledSync(env, controller.scheduledTime));
+    }
   },
 } satisfies ExportedHandler<WorkerEnv>;

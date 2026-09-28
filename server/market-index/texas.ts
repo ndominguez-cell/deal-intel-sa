@@ -25,7 +25,20 @@ export const TX_METROS = [
 ] as const;
 
 export const METRO_RADIUS_MILES = 35;
-export const INDEX_WEEKS = 12;
+
+// MarketCheck marks a listing sold only after it has been gone for several days,
+// so the most recent week of "recents" is badly undercounted (e.g. ~430 exits vs a
+// normal ~30K). Every sold window therefore ends REPORTING_LAG_DAYS ago.
+export const REPORTING_LAG_DAYS = 8;
+// Weeks of history pulled per refresh. 11 weeks + the lag fits inside the 90 days
+// the recents endpoint covers; older weeks come from stored reports.
+export const INDEX_WEEKS = 11;
+// "Last 30 days" and "prior 30 days" of exits, both shifted back by the lag.
+const SOLD_WINDOW = `${REPORTING_LAG_DAYS + 29}-${REPORTING_LAG_DAYS}`;
+const PRIOR_SOLD_WINDOW = `${REPORTING_LAG_DAYS + 59}-${REPORTING_LAG_DAYS + 30}`;
+// A week whose volume is under this share of the typical week is still filling in
+// (or partly outside the 90-day window) and is left out until a later refresh.
+const MIN_WEEK_VOLUME_SHARE = 0.5;
 
 export interface PriceStats {
   count: number;
@@ -172,6 +185,19 @@ export function mergeWeeks(previous: SeriesPoint[] | undefined, fresh: WeekPoint
   return Array.from(byWeek.values()).sort((a, b) => a.weekStart.localeCompare(b.weekStart));
 }
 
+/**
+ * Drops weeks whose total sold volume is far below the typical (median) week — a week
+ * still being reported, or one clipped by the 90-day window. A later refresh re-fetches
+ * and restores it once complete.
+ */
+export function dropIncompleteWeeks(weeks: WeekPoint[], minShare = MIN_WEEK_VOLUME_SHARE): WeekPoint[] {
+  const total = (w: WeekPoint) => Object.values(w.segments).reduce((sum, s) => sum + s.count, 0);
+  const totals = weeks.map(total).sort((a, b) => a - b);
+  if (!totals.length) return weeks;
+  const median = totals[Math.floor(totals.length / 2)];
+  return weeks.filter((w) => total(w) >= median * minShare);
+}
+
 /** The last `count` complete Monday–Sunday weeks before `now` (UTC). */
 export function completeWeeks(now: Date, count: number): Array<{ start: Date; end: Date }> {
   const today = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
@@ -244,7 +270,8 @@ export async function buildTexasIndex(
   };
 
   // 1. Weekly sold medians per segment → mix-adjusted index.
-  const weeks = completeWeeks(now, INDEX_WEEKS);
+  // Weeks must end at least a full lag before now to be reported.
+  const weeks = completeWeeks(new Date(now.getTime() - (REPORTING_LAG_DAYS - 1) * 86_400_000), INDEX_WEEKS);
   const weekTasks = weeks.flatMap((w) => TX_SEGMENTS.map((seg) => ({ w, seg })));
   const weekResults = await mapLimit(weekTasks, concurrency, ({ w, seg }) => safe(
     `week ${isoDay(w.start)} ${seg.key}`,
@@ -255,7 +282,7 @@ export async function buildTexasIndex(
     weekStart: isoDay(w.start),
     segments: Object.fromEntries(TX_SEGMENTS.map((seg, si) => [seg.key, weekResults[wi * TX_SEGMENTS.length + si]])),
   }));
-  const computed = computeIndexSeries(mergeWeeks(previousSeries, freshWeeks));
+  const computed = computeIndexSeries(mergeWeeks(previousSeries, dropIncompleteWeeks(freshWeeks)));
   const { weights } = computed;
   // With no segment that has a usable base week the index is undefined, not 0: publish no trend.
   const series = Object.values(weights).some((w) => w > 0) ? computed.series : [];
@@ -264,19 +291,19 @@ export async function buildTexasIndex(
   type Task = { key: string; run: () => Promise<any> };
   const tasks: Task[] = [
     { key: "state:active", run: () => mc(ACTIVE, { ...tx, stats: "price,dom" }) },
-    { key: "state:sold30", run: () => mc(RECENTS, { ...tx, ...sold, last_seen_days: "30-0", stats: "price" }) },
+    { key: "state:sold30", run: () => mc(RECENTS, { ...tx, ...sold, last_seen_days: SOLD_WINDOW, stats: "price" }) },
     { key: "makes:active", run: () => mc(ACTIVE, { ...tx, facets: "make|0|25" }) },
-    { key: "makes:sold30", run: () => mc(RECENTS, { ...tx, ...sold, last_seen_days: "30-0", facets: "make|0|60" }) },
+    { key: "makes:sold30", run: () => mc(RECENTS, { ...tx, ...sold, last_seen_days: SOLD_WINDOW, facets: "make|0|60" }) },
     ...TX_SEGMENTS.flatMap((seg) => [
       { key: `seg:${seg.key}:active`, run: () => mc(ACTIVE, { ...tx, body_type: seg.bodyTypes, stats: "price" }) },
-      { key: `seg:${seg.key}:sold30`, run: () => mc(RECENTS, { ...tx, ...sold, body_type: seg.bodyTypes, last_seen_days: "30-0", stats: "price" }) },
+      { key: `seg:${seg.key}:sold30`, run: () => mc(RECENTS, { ...tx, ...sold, body_type: seg.bodyTypes, last_seen_days: SOLD_WINDOW, stats: "price" }) },
     ]),
     ...TX_METROS.flatMap((m) => {
       const geo = { ...base, zip: m.zip, radius: METRO_RADIUS_MILES };
       return [
         { key: `metro:${m.key}:active`, run: () => mc(ACTIVE, { ...geo, stats: "price,dom" }) },
-        { key: `metro:${m.key}:sold30`, run: () => mc(RECENTS, { ...geo, ...sold, last_seen_days: "30-0", stats: "price" }) },
-        { key: `metro:${m.key}:sold60`, run: () => mc(RECENTS, { ...geo, ...sold, last_seen_days: "60-31", stats: "price" }) },
+        { key: `metro:${m.key}:sold30`, run: () => mc(RECENTS, { ...geo, ...sold, last_seen_days: SOLD_WINDOW, stats: "price" }) },
+        { key: `metro:${m.key}:sold60`, run: () => mc(RECENTS, { ...geo, ...sold, last_seen_days: PRIOR_SOLD_WINDOW, stats: "price" }) },
       ];
     }),
   ];

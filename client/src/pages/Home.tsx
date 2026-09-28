@@ -43,10 +43,14 @@ const DEFAULT_IMAGES: Record<string, string> = {
   "jeep_wrangler": "https://images.unsplash.com/photo-1553440569-bcc63803a83d?w=800&q=80",
 };
 
-function getImage(make: string, model: string, imageUrls: string[]): string {
-  if (imageUrls && imageUrls.length > 0 && imageUrls[0]) return imageUrls[0];
+function fallbackImage(make: string, model: string): string {
   const key = `${make.toLowerCase()}_${model.toLowerCase()}`;
   return DEFAULT_IMAGES[key] || "https://images.unsplash.com/photo-1492144534655-ae79c964c9d7?w=800&q=80";
+}
+
+function getImage(make: string, model: string, imageUrls: string[]): string {
+  if (imageUrls && imageUrls.length > 0 && imageUrls[0]) return imageUrls[0];
+  return fallbackImage(make, model);
 }
 
 export default function Home() {
@@ -541,6 +545,14 @@ function DealsList({ deals, getScoreColor, getScoreBg, emptyMessage }: { deals: 
                     <img 
                       src={image} 
                       alt={`${l.year} ${l.make} ${l.model}`}
+                      loading="lazy"
+                      onError={(e) => {
+                        // A dead listing photo falls back to a stock image of the model, once.
+                        const img = e.currentTarget;
+                        if (img.dataset.fallback) return;
+                        img.dataset.fallback = "1";
+                        img.src = fallbackImage(l.make, l.model);
+                      }}
                       className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105"
                     />
                     <div className="absolute top-3 left-3 flex flex-col gap-2">

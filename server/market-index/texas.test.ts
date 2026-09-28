@@ -6,6 +6,7 @@ import {
   completeWeeks,
   computeIndexSeries,
   daysSupply,
+  dropIncompleteWeeks,
   mergeWeeks,
   pctChange,
   type WeekPoint,
@@ -80,7 +81,12 @@ test("buildTexasIndex queries Texas used inventory and assembles a report", asyn
   const report = await buildTexasIndex(mc, new Date("2026-09-28T12:00:00Z"));
 
   assert.equal(report.source, "marketcheck");
-  assert.equal(report.series.length, 12);
+  assert.equal(report.series.length, 11);
+  // The newest week ends a full reporting lag before "now" (Mon Sep 28 → week of Sep 14).
+  assert.equal(report.series[report.series.length - 1].weekStart, "2026-09-14");
+  // Sold windows skip the lagging most recent days.
+  const soldWindows = new Set(calls.filter((c) => c.params.last_seen_days).map((c) => c.params.last_seen_days));
+  assert.deepEqual([...soldWindows].sort(), ["37-8", "67-38"]);
   assert.equal(report.headline.indexValue, 100);
   assert.equal(report.headline.daysSupply, 120);
   assert.equal(report.headline.medianDom, 44);
@@ -90,6 +96,16 @@ test("buildTexasIndex queries Texas used inventory and assembles a report", asyn
   assert.ok(calls.filter((c) => !c.params.zip).every((c) => c.params.state === "TX"));
   assert.ok(calls.filter((c) => c.path.endsWith("/recents")).every((c) => !(c.params.stats && c.params.facets)));
   assert.deepEqual(report.errors, []);
+});
+
+test("dropIncompleteWeeks leaves out weeks that are still being reported", () => {
+  const weeks = [
+    week("2026-08-31", { SUV: [16000, 25000], Sedan: [7000, 19500] }),
+    week("2026-09-07", { SUV: [15700, 25300], Sedan: [6800, 19800] }),
+    week("2026-09-14", { SUV: [16500, 25100], Sedan: [7700, 19700] }),
+    week("2026-09-21", { SUV: [253, 26000], Sedan: [85, 21998] }),
+  ];
+  assert.deepEqual(dropIncompleteWeeks(weeks).map((w) => w.weekStart), ["2026-08-31", "2026-09-07", "2026-09-14"]);
 });
 
 test("buildTexasIndex records failed calls without aborting the report", async () => {

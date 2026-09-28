@@ -11,6 +11,7 @@ import {
   TARGET_VEHICLES,
 } from "../server/sources/types";
 import { DatabaseStorage } from "../server/storage";
+import { marketCheckPhotoUrl, PHOTO_CACHE_SECONDS, toPublicImageUrl } from "../server/photos";
 import type { VehicleTargetFilter } from "../shared/schema";
 
 type WorkerEnv = Env & { ADMIN_TOKEN?: string };
@@ -27,6 +28,29 @@ function json(data: unknown, init?: ResponseInit): Response {
 function parseJsonSafe(value: unknown): unknown {
   if (typeof value !== "string") return value ?? null;
   try { return JSON.parse(value); } catch { return value; }
+}
+
+// Serves a MarketCheck cached photo (which needs the API key) from the edge cache,
+// fetching it with the key on a miss. See server/photos.ts.
+async function handlePhotoRequest(request: Request, env: WorkerEnv, ctx: ExecutionContext): Promise<Response> {
+  const upstream = marketCheckPhotoUrl(new URL(request.url).pathname);
+  if (!upstream || !env.MARKETCHECK_API_KEY) return new Response(null, { status: 404 });
+
+  // The DOM lib's CacheStorage type (also in scope) lacks the Workers-only `default` cache.
+  const cache = (caches as unknown as { default: Cache }).default;
+  const cacheKey = new Request(request.url, { method: "GET" });
+  const cached = await cache.match(cacheKey);
+  if (cached) return cached;
+
+  const res = await fetch(`${upstream}?api_key=${encodeURIComponent(env.MARKETCHECK_API_KEY)}`);
+  const type = res.headers.get("content-type") ?? "";
+  if (!res.ok || !type.startsWith("image/")) return new Response(null, { status: 404 });
+
+  const response = new Response(res.body, {
+    headers: { "Content-Type": type, "Cache-Control": `public, max-age=${PHOTO_CACHE_SECONDS}, immutable` },
+  });
+  ctx.waitUntil(cache.put(cacheKey, response.clone()));
+  return response;
 }
 
 function getStorage(env: WorkerEnv): DatabaseStorage {
@@ -117,7 +141,7 @@ async function handleDatabaseRequest(request: Request, env: WorkerEnv): Promise<
           isDealer: deal.isDealer,
           listingUrl: deal.listingUrl,
           titleStatus: deal.titleStatus,
-          imageUrls: deal.imageUrls,
+          imageUrls: (deal.imageUrls ?? []).map(toPublicImageUrl),
           firstSeenAt: deal.firstSeenAt,
           lastSeenAt: deal.lastSeenAt,
         },
@@ -383,8 +407,12 @@ async function runScheduledTexasIndex(env: WorkerEnv, scheduledTime: number): Pr
 }
 
 export default {
-  async fetch(request, env): Promise<Response> {
+  async fetch(request, env, ctx): Promise<Response> {
     const url = new URL(request.url);
+
+    if (request.method === "GET" && url.pathname.startsWith("/api/photo/")) {
+      return handlePhotoRequest(request, env, ctx);
+    }
 
     if (request.method === "GET" && url.pathname === "/api/health") {
       return json({

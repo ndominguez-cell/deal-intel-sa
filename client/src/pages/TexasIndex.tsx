@@ -239,7 +239,7 @@ export default function TexasIndex() {
                 {hasTrend && <Pct value={report.headline.change1w} className="text-sm" />}
               </div>
               <div className="text-[11px]" style={{ color: C.faint }}>
-                {hasTrend ? <>4W <Pct value={report.headline.change4w} /> · 12W <Pct value={report.headline.change12w} /></> : NO_TREND}
+                {hasTrend ? <>4W <Pct value={report.headline.change4w} /> · {Math.min(report.series.length - 1, 10)}W <Pct value={report.headline.change12w} /></> : NO_TREND}
               </div>
             </div>
             {report.segments.map((s) => (
@@ -494,7 +494,7 @@ export default function TexasIndex() {
             <p>
               <strong style={{ color: C.muted }}>Methodology.</strong> Sales are MarketCheck dealer listings that left the market (sold or delisted) in each Monday–Sunday week.
               The index is a fixed-weight average of each segment's median sold price relative to its base week, weighted by segment share of sales, so a week with more trucks sold doesn't read as a price rise.
-              Segments with fewer than 30 sales in a week carry their previous median. Asking prices and days on market come from current active inventory.
+              MarketCheck confirms a sale about a week after the car leaves the lot, so sales figures end eight days ago and a week joins the chart once it is fully reported. Segments with fewer than 30 sales in a week carry their previous median. Asking prices and days on market come from current active inventory.
             </p>
           </div>
         </>

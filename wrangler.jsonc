@@ -11,6 +11,11 @@
     "not_found_handling": "single-page-application",
     "run_worker_first": ["/api/*"]
   },
+  // Workers Paid: each sync makes ~2 provider calls per vehicle per page
+  // across MarketCheck and Auto.dev, well over the Free plan's 50-request cap.
+  "limits": {
+    "subrequests": 10000
+  },
   "observability": {
     "enabled": true,
     "logs": { "head_sampling_rate": 1 },

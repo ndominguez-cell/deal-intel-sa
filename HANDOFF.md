@@ -172,8 +172,9 @@ status before merging.
 
 **Database migrations are not applied automatically.** After adding a file to
 `migrations/`, run `npm run db:migrate:remote` once (requires `wrangler login`).
-All six current migrations are applied. `0006` was applied before `0005`, which
-is harmless.
+`0001`–`0006` are applied (`0006` before `0005`, which is harmless). **`0007`
+(Texas index) must be applied before PR #13 deploys**, or `/api/market-index/texas`
+returns 500.
 
 ### Local development
 

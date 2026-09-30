@@ -9,9 +9,27 @@ import {
   TARGET_VEHICLES,
 } from "../server/sources/types";
 import { DatabaseStorage } from "../server/storage";
+import { processClickUpDeliveries } from "./clickup-outbox";
+import { purgeExpiredLeadData } from "./lead-retention";
+import {
+  handleLeadRequest,
+  parseDealerDecision,
+  verifyTurnstileToken,
+} from "./leads";
 import type { VehicleTargetFilter } from "../shared/schema";
 
-type WorkerEnv = Env & { ADMIN_TOKEN?: string };
+const LEAD_RETENTION_SECONDS = 730 * 24 * 60 * 60;
+
+type WorkerEnv = Env & {
+  ADMIN_TOKEN?: string;
+  CLICKUP_API_TOKEN?: string;
+  CLICKUP_LIST_ID?: string;
+  TURNSTILE_SECRET_KEY?: string;
+  TURNSTILE_SITE_KEY?: string;
+  TURNSTILE_HOSTNAMES?: string;
+  LEAD_RATE_LIMITER: RateLimit;
+};
+
 
 function json(data: unknown, init?: ResponseInit): Response {
   return Response.json(data, init);
@@ -24,6 +42,25 @@ function parseJsonSafe(value: unknown): unknown {
 
 function getStorage(env: WorkerEnv): DatabaseStorage {
   return new DatabaseStorage(env.DB);
+}
+
+async function runClickUpDelivery(
+  env: WorkerEnv,
+): Promise<Awaited<ReturnType<typeof processClickUpDeliveries>>> {
+  if (!env.CLICKUP_API_TOKEN || !env.CLICKUP_LIST_ID) {
+    return {
+      processed: 0,
+      delivered: 0,
+      retried: 0,
+      failed: 0,
+      reconciliation: 0,
+    };
+  }
+  return processClickUpDeliveries({
+    storage: getStorage(env),
+    token: env.CLICKUP_API_TOKEN,
+    listId: env.CLICKUP_LIST_ID,
+  });
 }
 
 async function runTrackedSync(env: WorkerEnv): Promise<Awaited<ReturnType<typeof runLicensedMarketPipeline>>> {
@@ -67,7 +104,11 @@ async function isAuthorized(request: Request, env: WorkerEnv): Promise<boolean> 
   return constantTimeEqual(providedHash, expectedHash);
 }
 
-async function handleDatabaseRequest(request: Request, env: WorkerEnv): Promise<Response> {
+async function handleDatabaseRequest(
+  request: Request,
+  env: WorkerEnv,
+  ctx: ExecutionContext,
+): Promise<Response> {
   const storage = getStorage(env);
   const url = new URL(request.url);
 
@@ -218,31 +259,115 @@ async function handleDatabaseRequest(request: Request, env: WorkerEnv): Promise<
     return json({ healthy, runs });
   }
 
+  if (request.method === "GET" && url.pathname === "/api/public-config") {
+    return json(
+      { turnstileSiteKey: env.TURNSTILE_SITE_KEY ?? null },
+      { headers: { "Cache-Control": "public, max-age=300" } },
+    );
+  }
+
   if (request.method === "POST" && url.pathname === "/api/leads") {
-    const body = (await request.json().catch(() => null)) as Record<string, unknown> | null;
-    if (typeof body?.website === "string" && body.website.trim()) return json({ accepted: true }, { status: 202 });
-    const name = typeof body?.name === "string" ? body.name.trim().slice(0, 120) : "";
-    const phone = typeof body?.phone === "string" ? body.phone.trim().slice(0, 40) : "";
-    const email = typeof body?.email === "string" ? body.email.trim().slice(0, 160) : "";
-    if (!name || (!phone && !email)) return json({ error: "name and phone or email are required" }, { status: 400 });
-    const lead = await storage.insertLead({ name, phone: phone || null, email: email || null, vehicleMake: typeof body?.vehicleMake === "string" ? body.vehicleMake.trim().slice(0, 80) : null, vehicleModel: typeof body?.vehicleModel === "string" ? body.vehicleModel.trim().slice(0, 80) : null, listingId: typeof body?.listingId === "number" ? body.listingId : null, source: typeof body?.source === "string" ? body.source.slice(0, 40) : "landing_page", utmSource: typeof body?.utmSource === "string" ? body.utmSource.slice(0, 120) : null, utmCampaign: typeof body?.utmCampaign === "string" ? body.utmCampaign.slice(0, 120) : null, notes: typeof body?.notes === "string" ? body.notes.slice(0, 500) : null });
-    return json({ accepted: true, leadId: lead.id }, { status: 201 });
+    if (!env.TURNSTILE_SECRET_KEY || !env.TURNSTILE_SITE_KEY || !env.TURNSTILE_HOSTNAMES) {
+      return json({ error: "Lead intake is temporarily unavailable" }, { status: 503 });
+    }
+    const remoteIp = request.headers.get("CF-Connecting-IP");
+    const rateLimit = await env.LEAD_RATE_LIMITER.limit({
+      key: `lead:${remoteIp ?? "unknown"}`,
+    });
+    if (!rateLimit.success) {
+      return json({ error: "Too many requests. Please try again shortly." }, { status: 429 });
+    }
+    const expectedHostnames = new Set(
+      env.TURNSTILE_HOSTNAMES.split(",").map((value) => value.trim()).filter(Boolean),
+    );
+    return handleLeadRequest(
+      request,
+      storage,
+      () => {
+        if (env.CLICKUP_API_TOKEN && env.CLICKUP_LIST_ID) {
+          ctx.waitUntil(runClickUpDelivery(env));
+        }
+      },
+      (token) => verifyTurnstileToken({
+        secret: env.TURNSTILE_SECRET_KEY as string,
+        token,
+        remoteIp,
+        expectedHostnames,
+      }),
+    );
   }
 
   if (url.pathname === "/api/leads" || url.pathname.startsWith("/api/leads/")) {
     if (!(await isAuthorized(request, env))) return json({ error: "Unauthorized" }, { status: 401 });
     if (request.method === "GET") {
       const limit = Math.min(Math.max(Number(url.searchParams.get("limit")) || 50, 1), 250);
-      return json({ leads: await storage.getLeads(limit, url.searchParams.get("status") ?? undefined) });
+      return json(
+        { leads: await storage.getLeads(limit, url.searchParams.get("status") ?? undefined) },
+        { headers: { "Cache-Control": "private, no-store" } },
+      );
     }
     const leadStatus = url.pathname.match(/^\/api\/leads\/(\d+)\/status$/);
     if (request.method === "PATCH" && leadStatus) {
       const body = (await request.json().catch(() => null)) as { status?: unknown } | null;
-      const status = typeof body?.status === "string" ? body.status.trim().slice(0, 40) : "";
-      if (!status) return json({ error: "status is required" }, { status: 400 });
-      await storage.updateLeadStatus(Number(leadStatus[1]), status);
-      return json({ updated: true });
+      const status = parseDealerDecision(body?.status);
+      if (!status) {
+        return json({ error: "Invalid lead status" }, { status: 400 });
+      }
+      const outcome = await storage.updateLeadStatus(Number(leadStatus[1]), status);
+      if (outcome === "not_found") {
+        return json({ error: "Lead not found" }, { status: 404 });
+      }
+      if (outcome === "invalid_transition") {
+        return json({ error: "Lead decision is already final" }, { status: 409 });
+      }
+      return json({ updated: true }, { headers: { "Cache-Control": "no-store" } });
     }
+  }
+
+  if (request.method === "POST" && url.pathname === "/api/admin/deliveries/retry") {
+    if (!(await isAuthorized(request, env))) return json({ error: "Unauthorized" }, { status: 401 });
+    if (!env.CLICKUP_API_TOKEN || !env.CLICKUP_LIST_ID) {
+      return json({ error: "ClickUp delivery is not configured" }, { status: 503 });
+    }
+    return json(await runClickUpDelivery(env), {
+      headers: { "Cache-Control": "no-store" },
+    });
+  }
+
+  if (request.method === "GET" && url.pathname === "/api/admin/deliveries/reconciliation") {
+    if (!(await isAuthorized(request, env))) return json({ error: "Unauthorized" }, { status: 401 });
+    return json(
+      { deliveries: await storage.getReconciliationDeliveries(100) },
+      { headers: { "Cache-Control": "private, no-store" } },
+    );
+  }
+
+  const reconciliation = url.pathname.match(
+    /^\/api\/admin\/deliveries\/(\d+)\/reconcile$/,
+  );
+  if (request.method === "POST" && reconciliation) {
+    if (!(await isAuthorized(request, env))) return json({ error: "Unauthorized" }, { status: 401 });
+    const body = (await request.json().catch(() => null)) as {
+      action?: unknown;
+      externalId?: unknown;
+    } | null;
+    const outboxId = Number(reconciliation[1]);
+    const nowEpoch = Math.floor(Date.now() / 1_000);
+    let updated = false;
+    if (body?.action === "mark_delivered") {
+      const externalId = typeof body.externalId === "string" ? body.externalId.trim() : "";
+      if (!externalId || externalId.length > 100) {
+        return json({ error: "A valid externalId is required" }, { status: 400 });
+      }
+      updated = await storage.resolveReconciliationAsDelivered(outboxId, externalId, nowEpoch);
+    } else if (body?.action === "retry") {
+      updated = await storage.releaseReconciliationForRetry(outboxId, nowEpoch);
+    } else {
+      return json({ error: "Invalid reconciliation action" }, { status: 400 });
+    }
+    return updated
+      ? json({ updated: true }, { headers: { "Cache-Control": "no-store" } })
+      : json({ error: "Delivery is not awaiting reconciliation" }, { status: 409 });
   }
 
   if (url.pathname === "/api/admin/targets") {
@@ -285,6 +410,11 @@ async function handleDatabaseRequest(request: Request, env: WorkerEnv): Promise<
 
 async function runScheduledSync(env: WorkerEnv, scheduledTime: number): Promise<void> {
   try {
+    const retention = await purgeExpiredLeadData({
+      storage: getStorage(env),
+      cutoffEpoch: Math.floor(scheduledTime / 1_000) - LEAD_RETENTION_SECONDS,
+      clickupToken: env.CLICKUP_API_TOKEN,
+    });
     const result = await runTrackedSync(env);
     console.log(
       JSON.stringify({
@@ -298,6 +428,10 @@ async function runScheduledSync(env: WorkerEnv, scheduledTime: number): Promise<
         updated: result.ingestion.updated,
         deactivated: result.ingestion.deactivated,
         scored: result.scoring.scored,
+        retentionReviewed: retention.reviewed,
+        retentionDeleted: retention.deleted,
+        retentionDeferred: retention.deferred,
+        retentionRemaining: retention.remaining,
       }),
     );
   } catch (error) {
@@ -313,7 +447,7 @@ async function runScheduledSync(env: WorkerEnv, scheduledTime: number): Promise<
 }
 
 export default {
-  async fetch(request, env): Promise<Response> {
+  async fetch(request, env, ctx): Promise<Response> {
     const url = new URL(request.url);
 
     if (request.method === "GET" && url.pathname === "/api/health") {
@@ -324,6 +458,10 @@ export default {
         runtime: "cloudflare-workers",
         database: "cloudflare-d1",
         sources: ["marketcheck", "autodev"],
+        leadDelivery: env.CLICKUP_API_TOKEN && env.CLICKUP_LIST_ID ? "configured" : "not_configured",
+        leadProtection: env.TURNSTILE_SECRET_KEY && env.TURNSTILE_SITE_KEY
+          ? "configured"
+          : "not_configured",
         minListingPrice: MIN_LISTING_PRICE,
         maxListingPrice: MAX_LISTING_PRICE,
         maxListingMileage: MAX_LISTING_MILEAGE,
@@ -337,7 +475,7 @@ export default {
     }
 
     try {
-      return await handleDatabaseRequest(request, env);
+      return await handleDatabaseRequest(request, env, ctx);
     } catch (error) {
       console.error(
         JSON.stringify({
@@ -352,6 +490,10 @@ export default {
   },
 
   async scheduled(controller, env, ctx): Promise<void> {
-    ctx.waitUntil(runScheduledSync(env, controller.scheduledTime));
+    if (controller.cron === "0 12 * * *") {
+      ctx.waitUntil(runScheduledSync(env, controller.scheduledTime));
+      return;
+    }
+    ctx.waitUntil(runClickUpDelivery(env));
   },
 } satisfies ExportedHandler<WorkerEnv>;

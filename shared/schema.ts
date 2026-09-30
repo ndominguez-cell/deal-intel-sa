@@ -119,18 +119,28 @@ export interface VehicleTargetFilter {
 
 export interface Lead {
   id: number;
+  requestId: string | null;
   name: string;
   phone: string | null;
   email: string | null;
   vehicleMake: string | null;
   vehicleModel: string | null;
   listingId: number | null;
+  preferredDate: string | null;
+  preferredTimeWindow: string | null;
+  timezone: string | null;
+  consentGiven: boolean;
+  consentVersion: string | null;
+  consentedAt: Date | null;
   source: string;
   utmSource: string | null;
   utmCampaign: string | null;
   notes: string | null;
   status: string;
+  deliveryStatus: string;
+  clickupTaskId: string | null;
   createdAt: Date;
+  updatedAt: Date;
 }
 
 export interface JobRun {

@@ -9,6 +9,33 @@ import type {
   ScoreBreakdown,
 } from "@shared/schema";
 import type { VehicleTarget, VehicleTargetFilter } from "@shared/schema";
+import type { ParsedLeadSubmission } from "../worker/leads";
+
+export interface DueLeadDelivery {
+  outboxId: number;
+  attemptCount: number;
+  lead: Lead;
+}
+
+export interface ExpiredLeadReference {
+  id: number;
+  clickupTaskId: string | null;
+}
+
+export interface ReconciliationDelivery {
+  outboxId: number;
+  leadId: number;
+  requestId: string;
+  attemptCount: number;
+  errorCode: string | null;
+}
+
+export class LeadRequestConflictError extends Error {
+  constructor() {
+    super("Request ID was already used for a different submission");
+    this.name = "LeadRequestConflictError";
+  }
+}
 
 type DbValue = string | number | boolean | null;
 type DbRow = Record<string, unknown>;
@@ -71,9 +98,20 @@ export interface IStorage {
   getActiveVehicleTargets(): Promise<VehicleTarget[]>;
   addVehicleTarget(data: VehicleTargetFilter): Promise<VehicleTarget>;
   deactivateVehicleTarget(id: number): Promise<void>;
-  insertLead(data: Omit<Lead, "id" | "createdAt" | "status"> & { status?: string }): Promise<Lead>;
+  insertLeadWithOutbox(data: ParsedLeadSubmission): Promise<{ lead: Lead; created: boolean }>;
+  claimDueLeadDeliveries(limit: number, nowEpoch: number, claimToken: string): Promise<DueLeadDelivery[]>;
+  markStaleLeadDeliveriesForReconciliation(nowEpoch: number): Promise<void>;
+  markLeadDelivered(outboxId: number, leadId: number, externalId: string, claimToken: string, nowEpoch: number): Promise<void>;
+  markLeadDeliveryRetry(outboxId: number, attemptCount: number, nextAttemptAt: number, errorCode: string, claimToken: string, nowEpoch: number): Promise<void>;
+  markLeadDeliveryFailed(outboxId: number, attemptCount: number, errorCode: string, claimToken: string, nowEpoch: number): Promise<void>;
+  markLeadDeliveryNeedsReconciliation(outboxId: number, attemptCount: number, errorCode: string, claimToken: string, nowEpoch: number): Promise<void>;
+  getReconciliationDeliveries(limit: number): Promise<ReconciliationDelivery[]>;
+  resolveReconciliationAsDelivered(outboxId: number, externalId: string, nowEpoch: number): Promise<boolean>;
+  releaseReconciliationForRetry(outboxId: number, nowEpoch: number): Promise<boolean>;
+  getExpiredLeadReferences(cutoffEpoch: number, limit: number, afterId?: number): Promise<ExpiredLeadReference[]>;
+  deleteExpiredLead(id: number, cutoffEpoch: number): Promise<boolean>;
   getLeads(limit: number, status?: string): Promise<Lead[]>;
-  updateLeadStatus(id: number, status: string): Promise<void>;
+  updateLeadStatus(id: number, status: "dealer_confirmed" | "dealer_declined"): Promise<"updated" | "not_found" | "invalid_transition">;
 }
 
 const LISTING_COLUMNS = `
@@ -207,12 +245,29 @@ function vehicleTargetFromRow(row: DbRow): VehicleTarget {
 
 function leadFromRow(row: DbRow): Lead {
   return {
-    id: Number(row.id), name: String(row.name),
-    phone: row.phone == null ? null : String(row.phone), email: row.email == null ? null : String(row.email),
-    vehicleMake: row.vehicle_make == null ? null : String(row.vehicle_make), vehicleModel: row.vehicle_model == null ? null : String(row.vehicle_model),
-    listingId: row.listing_id == null ? null : Number(row.listing_id), source: String(row.source),
-    utmSource: row.utm_source == null ? null : String(row.utm_source), utmCampaign: row.utm_campaign == null ? null : String(row.utm_campaign),
-    notes: row.notes == null ? null : String(row.notes), status: String(row.status), createdAt: dateFromDb(row.created_at),
+    id: Number(row.id),
+    requestId: row.request_id == null ? null : String(row.request_id),
+    name: String(row.name),
+    phone: row.phone == null ? null : String(row.phone),
+    email: row.email == null ? null : String(row.email),
+    vehicleMake: row.vehicle_make == null ? null : String(row.vehicle_make),
+    vehicleModel: row.vehicle_model == null ? null : String(row.vehicle_model),
+    listingId: row.listing_id == null ? null : Number(row.listing_id),
+    preferredDate: row.preferred_date == null ? null : String(row.preferred_date),
+    preferredTimeWindow: row.preferred_time_window == null ? null : String(row.preferred_time_window),
+    timezone: row.timezone == null ? null : String(row.timezone),
+    consentGiven: boolFromDb(row.consent_given),
+    consentVersion: row.consent_version == null ? null : String(row.consent_version),
+    consentedAt: row.consented_at == null ? null : dateFromDb(row.consented_at),
+    source: String(row.source),
+    utmSource: row.utm_source == null ? null : String(row.utm_source),
+    utmCampaign: row.utm_campaign == null ? null : String(row.utm_campaign),
+    notes: row.notes == null ? null : String(row.notes),
+    status: String(row.status),
+    deliveryStatus: String(row.delivery_status ?? "not_applicable"),
+    clickupTaskId: row.clickup_task_id == null ? null : String(row.clickup_task_id),
+    createdAt: dateFromDb(row.created_at),
+    updatedAt: dateFromDb(row.updated_at ?? row.created_at),
   };
 }
 
@@ -772,11 +827,355 @@ export class DatabaseStorage implements IStorage {
       .run();
   }
 
-  async insertLead(data: Omit<Lead, "id" | "createdAt" | "status"> & { status?: string }): Promise<Lead> {
-    const row = await this.db.prepare(`INSERT INTO leads (name, phone, email, vehicle_make, vehicle_model, listing_id, source, utm_source, utm_campaign, notes, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING *`)
-      .bind(data.name, data.phone, data.email, data.vehicleMake, data.vehicleModel, data.listingId, data.source, data.utmSource, data.utmCampaign, data.notes, data.status ?? "new").first<DbRow>();
+  async insertLeadWithOutbox(data: ParsedLeadSubmission): Promise<{ lead: Lead; created: boolean }> {
+    const results = await this.db.batch([
+      this.db.prepare(`
+        INSERT OR IGNORE INTO leads (
+          request_id, name, phone, email, vehicle_make, vehicle_model, listing_id,
+          preferred_date, preferred_time_window, timezone, consent_given,
+          consent_version, consented_at, source, utm_source, utm_campaign, notes,
+          status, delivery_status, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?, NULL, ?, 'pending', ?)
+      `).bind(
+        data.requestId,
+        data.name,
+        data.phone,
+        data.email,
+        data.vehicleMake,
+        data.vehicleModel,
+        data.listingId,
+        data.preferredDate,
+        data.preferredTimeWindow,
+        data.timezone,
+        data.consentVersion,
+        data.consentedAt,
+        data.source,
+        data.utmSource,
+        data.utmCampaign,
+        data.status,
+        data.consentedAt,
+      ),
+      this.db.prepare(`
+        INSERT OR IGNORE INTO lead_delivery_outbox (lead_id, provider)
+        SELECT id, 'clickup' FROM leads WHERE request_id = ?
+      `).bind(data.requestId),
+    ]);
+
+    const row = await this.db
+      .prepare("SELECT * FROM leads WHERE request_id = ? LIMIT 1")
+      .bind(data.requestId)
+      .first<DbRow>();
     if (!row) throw new Error("Lead could not be read after insert");
-    return leadFromRow(row);
+    const created = Number(results[0]?.meta.changes ?? 0) > 0;
+    const stored = leadFromRow(row);
+    if (!created) {
+      const sameSubmission =
+        stored.name === data.name &&
+        stored.phone === data.phone &&
+        stored.email === data.email &&
+        stored.vehicleMake === data.vehicleMake &&
+        stored.vehicleModel === data.vehicleModel &&
+        stored.listingId === data.listingId &&
+        stored.preferredDate === data.preferredDate &&
+        stored.preferredTimeWindow === data.preferredTimeWindow &&
+        stored.timezone === data.timezone &&
+        stored.consentVersion === data.consentVersion &&
+        stored.source === data.source &&
+        stored.utmSource === data.utmSource &&
+        stored.utmCampaign === data.utmCampaign;
+      if (!sameSubmission) throw new LeadRequestConflictError();
+    }
+    return { lead: stored, created };
+  }
+
+  async claimDueLeadDeliveries(
+    limit: number,
+    nowEpoch: number,
+    claimToken: string,
+  ): Promise<DueLeadDelivery[]> {
+    const boundedLimit = Math.min(Math.max(limit, 1), 25);
+    const results = await this.db.batch([
+      this.db.prepare(`
+        UPDATE lead_delivery_outbox
+        SET status = 'processing', claim_token = ?, lease_expires_at = ?,
+            last_attempt_at = ?, updated_at = ?
+        WHERE id IN (
+          SELECT id FROM lead_delivery_outbox
+          WHERE provider = 'clickup'
+            AND status IN ('pending', 'retryable_failure')
+            AND next_attempt_at <= ?
+            AND attempt_count < 8
+          ORDER BY next_attempt_at, id
+          LIMIT ?
+        )
+      `).bind(claimToken, nowEpoch + 120, nowEpoch, nowEpoch, nowEpoch, boundedLimit),
+      this.db.prepare(`
+        UPDATE leads
+        SET delivery_status = 'processing', updated_at = ?
+        WHERE id IN (
+          SELECT lead_id FROM lead_delivery_outbox
+          WHERE status = 'processing' AND claim_token = ?
+        )
+      `).bind(nowEpoch, claimToken),
+      this.db.prepare(`
+        SELECT o.id AS outbox_id, o.attempt_count, l.*
+        FROM lead_delivery_outbox o
+        INNER JOIN leads l ON l.id = o.lead_id
+        WHERE o.provider = 'clickup'
+          AND o.status = 'processing'
+          AND o.claim_token = ?
+        ORDER BY o.id
+      `).bind(claimToken),
+    ]);
+    const rows = (results[2]?.results ?? []) as DbRow[];
+    return rows.map((row) => ({
+      outboxId: Number(row.outbox_id),
+      attemptCount: Number(row.attempt_count),
+      lead: leadFromRow(row),
+    }));
+  }
+
+  async markStaleLeadDeliveriesForReconciliation(nowEpoch: number): Promise<void> {
+    await this.db.batch([
+      this.db.prepare(`
+        UPDATE leads
+        SET delivery_status = 'needs_reconciliation', updated_at = ?
+        WHERE id IN (
+          SELECT lead_id FROM lead_delivery_outbox
+          WHERE status = 'processing' AND lease_expires_at <= ?
+        )
+      `).bind(nowEpoch, nowEpoch),
+      this.db.prepare(`
+        UPDATE lead_delivery_outbox
+        SET status = 'needs_reconciliation', last_error_code = 'lease_expired',
+            claim_token = NULL, lease_expires_at = NULL, updated_at = ?
+        WHERE status = 'processing' AND lease_expires_at <= ?
+      `).bind(nowEpoch, nowEpoch),
+    ]);
+  }
+
+  async markLeadDelivered(
+    outboxId: number,
+    leadId: number,
+    externalId: string,
+    claimToken: string,
+    nowEpoch: number,
+  ): Promise<void> {
+    await this.db.batch([
+      this.db.prepare(`
+        UPDATE leads
+        SET delivery_status = 'forwarded', clickup_task_id = ?, updated_at = ?
+        WHERE id = ? AND EXISTS (
+          SELECT 1 FROM lead_delivery_outbox
+          WHERE id = ? AND status = 'processing' AND claim_token = ?
+        )
+      `).bind(externalId, nowEpoch, leadId, outboxId, claimToken),
+      this.db.prepare(`
+        UPDATE lead_delivery_outbox
+        SET status = 'delivered', external_id = ?, last_error_code = NULL,
+            claim_token = NULL, lease_expires_at = NULL, updated_at = ?
+        WHERE id = ? AND status = 'processing' AND claim_token = ?
+      `).bind(externalId, nowEpoch, outboxId, claimToken),
+    ]);
+  }
+
+  async markLeadDeliveryRetry(
+    outboxId: number,
+    attemptCount: number,
+    nextAttemptAt: number,
+    errorCode: string,
+    claimToken: string,
+    nowEpoch: number,
+  ): Promise<void> {
+    await this.db.batch([
+      this.db.prepare(`
+        UPDATE leads
+        SET delivery_status = 'retryable_failure', updated_at = ?
+        WHERE id = (SELECT lead_id FROM lead_delivery_outbox WHERE id = ?)
+          AND EXISTS (
+            SELECT 1 FROM lead_delivery_outbox
+            WHERE id = ? AND status = 'processing' AND claim_token = ?
+          )
+      `).bind(nowEpoch, outboxId, outboxId, claimToken),
+      this.db.prepare(`
+        UPDATE lead_delivery_outbox
+        SET status = 'retryable_failure', attempt_count = ?, next_attempt_at = ?,
+            last_error_code = ?, claim_token = NULL, lease_expires_at = NULL,
+            updated_at = ?
+        WHERE id = ? AND status = 'processing' AND claim_token = ?
+      `).bind(
+        attemptCount,
+        nextAttemptAt,
+        errorCode.slice(0, 80),
+        nowEpoch,
+        outboxId,
+        claimToken,
+      ),
+    ]);
+  }
+
+  async markLeadDeliveryFailed(
+    outboxId: number,
+    attemptCount: number,
+    errorCode: string,
+    claimToken: string,
+    nowEpoch: number,
+  ): Promise<void> {
+    await this.finishLeadDelivery(
+      outboxId,
+      attemptCount,
+      "final_failure",
+      errorCode,
+      claimToken,
+      nowEpoch,
+    );
+  }
+
+  async markLeadDeliveryNeedsReconciliation(
+    outboxId: number,
+    attemptCount: number,
+    errorCode: string,
+    claimToken: string,
+    nowEpoch: number,
+  ): Promise<void> {
+    await this.finishLeadDelivery(
+      outboxId,
+      attemptCount,
+      "needs_reconciliation",
+      errorCode,
+      claimToken,
+      nowEpoch,
+    );
+  }
+
+  private async finishLeadDelivery(
+    outboxId: number,
+    attemptCount: number,
+    status: "final_failure" | "needs_reconciliation",
+    errorCode: string,
+    claimToken: string,
+    nowEpoch: number,
+  ): Promise<void> {
+    await this.db.batch([
+      this.db.prepare(`
+        UPDATE leads
+        SET delivery_status = ?, updated_at = ?
+        WHERE id = (SELECT lead_id FROM lead_delivery_outbox WHERE id = ?)
+          AND EXISTS (
+            SELECT 1 FROM lead_delivery_outbox
+            WHERE id = ? AND status = 'processing' AND claim_token = ?
+          )
+      `).bind(status, nowEpoch, outboxId, outboxId, claimToken),
+      this.db.prepare(`
+        UPDATE lead_delivery_outbox
+        SET status = ?, attempt_count = ?, last_error_code = ?,
+            claim_token = NULL, lease_expires_at = NULL, updated_at = ?
+        WHERE id = ? AND status = 'processing' AND claim_token = ?
+      `).bind(
+        status,
+        attemptCount,
+        errorCode.slice(0, 80),
+        nowEpoch,
+        outboxId,
+        claimToken,
+      ),
+    ]);
+  }
+
+  async getReconciliationDeliveries(limit: number): Promise<ReconciliationDelivery[]> {
+    const boundedLimit = Math.min(Math.max(limit, 1), 100);
+    const rows = await this.all(`
+      SELECT o.id AS outbox_id, o.lead_id, l.request_id, o.attempt_count,
+             o.last_error_code
+      FROM lead_delivery_outbox o
+      INNER JOIN leads l ON l.id = o.lead_id
+      WHERE o.status = 'needs_reconciliation'
+      ORDER BY o.updated_at, o.id
+      LIMIT ?
+    `, boundedLimit);
+    return rows.map((row) => ({
+      outboxId: Number(row.outbox_id),
+      leadId: Number(row.lead_id),
+      requestId: String(row.request_id),
+      attemptCount: Number(row.attempt_count),
+      errorCode: row.last_error_code == null ? null : String(row.last_error_code),
+    }));
+  }
+
+  async resolveReconciliationAsDelivered(
+    outboxId: number,
+    externalId: string,
+    nowEpoch: number,
+  ): Promise<boolean> {
+    const results = await this.db.batch([
+      this.db.prepare(`
+        UPDATE leads
+        SET delivery_status = 'forwarded', clickup_task_id = ?, updated_at = ?
+        WHERE id = (
+          SELECT lead_id FROM lead_delivery_outbox
+          WHERE id = ? AND status = 'needs_reconciliation'
+        )
+      `).bind(externalId, nowEpoch, outboxId),
+      this.db.prepare(`
+        UPDATE lead_delivery_outbox
+        SET status = 'delivered', external_id = ?, last_error_code = NULL,
+            updated_at = ?
+        WHERE id = ? AND status = 'needs_reconciliation'
+      `).bind(externalId, nowEpoch, outboxId),
+    ]);
+    return Number(results[1]?.meta.changes ?? 0) > 0;
+  }
+
+  async releaseReconciliationForRetry(outboxId: number, nowEpoch: number): Promise<boolean> {
+    const results = await this.db.batch([
+      this.db.prepare(`
+        UPDATE leads
+        SET delivery_status = 'retryable_failure', updated_at = ?
+        WHERE id = (
+          SELECT lead_id FROM lead_delivery_outbox
+          WHERE id = ? AND status = 'needs_reconciliation'
+        )
+      `).bind(nowEpoch, outboxId),
+      this.db.prepare(`
+        UPDATE lead_delivery_outbox
+        SET status = 'retryable_failure', next_attempt_at = ?,
+            last_error_code = 'manual_retry_approved', updated_at = ?
+        WHERE id = ? AND status = 'needs_reconciliation'
+      `).bind(nowEpoch, nowEpoch, outboxId),
+    ]);
+    return Number(results[1]?.meta.changes ?? 0) > 0;
+  }
+
+  async getExpiredLeadReferences(
+    cutoffEpoch: number,
+    limit: number,
+    afterId = 0,
+  ): Promise<ExpiredLeadReference[]> {
+    const boundedLimit = Math.min(Math.max(limit, 1), 100);
+    const rows = await this.all(`
+      SELECT l.id, l.clickup_task_id
+      FROM leads l
+      LEFT JOIN lead_delivery_outbox o
+        ON o.lead_id = l.id AND o.provider = 'clickup'
+      WHERE l.created_at < ?
+        AND l.id > ?
+        AND COALESCE(o.status, 'delivered') NOT IN ('processing', 'needs_reconciliation')
+        AND l.delivery_status NOT IN ('processing', 'needs_reconciliation')
+      ORDER BY l.id
+      LIMIT ?
+    `, cutoffEpoch, afterId, boundedLimit);
+    return rows.map((row) => ({
+      id: Number(row.id),
+      clickupTaskId: row.clickup_task_id == null ? null : String(row.clickup_task_id),
+    }));
+  }
+
+  async deleteExpiredLead(id: number, cutoffEpoch: number): Promise<boolean> {
+    const result = await this.db
+      .prepare("DELETE FROM leads WHERE id = ? AND created_at < ?")
+      .bind(id, cutoffEpoch)
+      .run();
+    return Number(result.meta.changes ?? 0) > 0;
   }
 
   async getLeads(limit: number, status?: string): Promise<Lead[]> {
@@ -786,7 +1185,19 @@ export class DatabaseStorage implements IStorage {
     return rows.map(leadFromRow);
   }
 
-  async updateLeadStatus(id: number, status: string): Promise<void> {
-    await this.db.prepare("UPDATE leads SET status = ? WHERE id = ?").bind(status, id).run();
+  async updateLeadStatus(
+    id: number,
+    status: "dealer_confirmed" | "dealer_declined",
+  ): Promise<"updated" | "not_found" | "invalid_transition"> {
+    const result = await this.db.prepare(`
+      UPDATE leads SET status = ?, updated_at = unixepoch()
+      WHERE id = ? AND status = 'requested'
+    `).bind(status, id).run();
+    if (Number(result.meta.changes ?? 0) > 0) return "updated";
+    const existing = await this.db
+      .prepare("SELECT id FROM leads WHERE id = ? LIMIT 1")
+      .bind(id)
+      .first<{ id: number }>();
+    return existing ? "invalid_transition" : "not_found";
   }
 }

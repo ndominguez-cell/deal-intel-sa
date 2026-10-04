@@ -280,6 +280,33 @@ These are **not** simulation, so they stay in the live path:
 - The trend builds up over time: the first live refresh already covers 12 weeks,
   and each daily refresh merges fresh weeks into the stored history.
 
+## Facebook ads landing page (`/sa/`)
+
+A bilingual (EN/ES) payment-match landing page for the San Antonio Facebook ads,
+served by this Worker at `/sa/` as a static asset (`client/public/sa/index.html`).
+Because it is served from the Worker, its API calls are same-origin (the Worker
+sends no CORS headers).
+
+- **Inventory:** loads `GET /api/deals/top?limit=150` and shows the best-scored
+  listings, up to 3 each of trucks, SUVs and sedans, with the listing's photo,
+  dealer, distance and a link to the listing. Monthly payments, and the financing
+  disclosure's payment and price range, are computed from the live prices. If the
+  API fails, the page shows clearly labelled sample vehicles.
+- **Leads:** the form posts to `POST /api/leads` with `source: "fb_sa_landing"`,
+  `utm_source`/`utm_campaign` from the URL, the picked listing (if any), and the
+  quiz answers plus consent flags in `notes`. The empty `website` field is the
+  honeypot the endpoint already checks.
+- **Not done yet:** the Meta Pixel / Conversions API "Lead" event (a comment marks
+  the spot in the submit handler), and the yellow `[Dealer ...]` placeholders.
+- **The listings are market-wide**, from many San Antonio-area dealers, not one
+  dealer's lot. The page copy says so. Before running ads for a specific dealer,
+  filter to that dealer's inventory; there is no dealer filter on
+  `/api/deals/top` yet.
+- **Source of truth:** the page is authored in the Auto-Intel repo
+  (`autosales-leadgen/facebook-sa/landing-page.html`, an artifact body with no
+  `<html>`/`<head>`). The copy here adds the document wrapper, a viewport meta tag
+  and `noindex`. Update both together.
+
 ## Gotchas already hit (don't reintroduce)
 
 - **Blank screen:** the Cloudflare build must use the automatic JSX runtime

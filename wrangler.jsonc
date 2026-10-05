@@ -16,7 +16,7 @@
   },
   "vars": {
     "TURNSTILE_SITE_KEY": "0x4AAAAAAFJ99Z487LueFk3h",
-    "TURNSTILE_HOSTNAMES": "deal-intel-sa.ndominguez-2405.workers.dev"
+    "TURNSTILE_HOSTNAMES": "deal-intel-sa.ndominguez.workers.dev"
   },
   "ratelimits": [
     {

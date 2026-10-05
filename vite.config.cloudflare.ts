@@ -24,6 +24,9 @@ function removeGeneratedPreviewSecrets(): Plugin {
 }
 
 export default defineConfig({
+  esbuild: {
+    jsx: "automatic",
+  },
   plugins: [
     tailwindcss(),
     cloudflare({

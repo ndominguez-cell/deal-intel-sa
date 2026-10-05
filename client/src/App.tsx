@@ -7,11 +7,13 @@ import NotFound from "@/pages/not-found";
 import Home from "@/pages/Home";
 import VehicleLanding from "@/pages/VehicleLanding";
 import Privacy from "@/pages/Privacy";
+import { MetaPixel } from "@/components/MetaPixel";
 
 function Router() {
   return (
     <Switch>
       <Route path="/" component={Home}/>
+      <Route path="/today" component={Home}/>
       <Route path="/deals/:make/:model" component={VehicleLanding}/>
       <Route path="/privacy" component={Privacy}/>
       <Route component={NotFound} />
@@ -23,6 +25,7 @@ function App() {
   return (
     <QueryClientProvider client={queryClient}>
       <TooltipProvider>
+        <MetaPixel />
         <Toaster />
         <Router />
       </TooltipProvider>

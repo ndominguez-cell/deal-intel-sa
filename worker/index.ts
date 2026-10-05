@@ -27,6 +27,7 @@ type WorkerEnv = Env & {
   TURNSTILE_SECRET_KEY?: string;
   TURNSTILE_SITE_KEY?: string;
   TURNSTILE_HOSTNAMES?: string;
+  META_PIXEL_ID?: string;
   LEAD_RATE_LIMITER: RateLimit;
 };
 
@@ -261,7 +262,10 @@ async function handleDatabaseRequest(
 
   if (request.method === "GET" && url.pathname === "/api/public-config") {
     return json(
-      { turnstileSiteKey: env.TURNSTILE_SITE_KEY ?? null },
+      {
+        turnstileSiteKey: env.TURNSTILE_SITE_KEY ?? null,
+        metaPixelId: env.META_PIXEL_ID ?? null,
+      },
       { headers: { "Cache-Control": "public, max-age=300" } },
     );
   }

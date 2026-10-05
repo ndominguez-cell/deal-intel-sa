@@ -10,9 +10,9 @@ Cloudflare D1, and calculates deal scores from local comparables.
 The Worker runs once per day at `12:00 UTC`:
 
 1. Query MarketCheck and Auto.dev concurrently in bounded, paginated batches.
-2. Keep Ford F-150 and Chevrolet Silverado 1500 listings that are model year
+2. Apply the active D1 vehicle targets, then keep listings that are model year
    2020 or newer, priced from $10,000 to $35,000, have no more than 90,000 miles,
-   and are within 100 miles of ZIP code 78205.
+   and are within 45 miles of San Antonio.
 3. Normalize both providers into one schema and deduplicate by VIN.
 4. Insert new vehicles, update existing vehicles, and record price changes.
 5. Mark listings that disappeared from a successful full import as inactive.
@@ -97,3 +97,25 @@ curl -X POST \
   -H "Authorization: Bearer $ADMIN_TOKEN" \
   https://YOUR_WORKER_DOMAIN/api/jobs/sync
 ```
+
+## Production and Facebook campaign
+
+- Canonical Worker: `https://deal-intel-sa.ndominguez.workers.dev`
+- Campaign entry point: `/today`
+- Build artifact and deploy config: `dist/public/deal_intel_sa/wrangler.json`
+- D1 binding: `DB` → `deal-intel-sa-db`
+
+Campaign query parameters (`utm_source`, `utm_medium`, `utm_campaign`,
+`utm_content`, `utm_term`, and `fbclid`) are retained for the browser session
+and passed into vehicle landing pages. Lead submissions persist `utm_source`
+and `utm_campaign`.
+
+Set `META_PIXEL_ID` to the public Meta Pixel ID to activate PageView, Search,
+ViewContent, Lead, SelectDeal, and StartAvailabilityRequest events. Leaving it
+empty keeps the application functional without loading Meta's script.
+
+The campaign strategy, ad copy, and creative board are in [`marketing/`](marketing/).
+
+After deployment, verify the homepage, `/today`, a vehicle route,
+`/api/health`, `/api/deals/top`, and a Turnstile-protected lead request on the
+production hostname.

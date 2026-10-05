@@ -1,0 +1,11 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "tsBuildInfoFile": "./node_modules/typescript/tsbuildinfo.client",
+    "types": ["node", "vite/client"]
+  },
+  "include": [
+    "client/src/**/*",
+    "shared/**/*"
+  ]
+}

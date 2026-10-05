@@ -1,775 +1,280 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { 
-  Car, 
-  MapPin, 
-  TrendingDown, 
-  Search, 
-  ShieldCheck, 
-  AlertTriangle,
-  Flame,
+import {
+  ArrowRight,
   BarChart3,
+  Check,
+  ChevronDown,
+  Clock3,
   Gauge,
-  Clock,
-  CheckCircle2,
-  Info,
-  Store,
-  Zap,
-  Target,
+  MapPin,
+  Search,
+  ShieldCheck,
+  Sparkles,
 } from "lucide-react";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
-import { Progress } from "@/components/ui/progress";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { apiRequest } from "@/lib/api";
+import { trackCampaignEvent, withAttribution } from "@/lib/campaign";
 
-const DEALER_DATA = [
-  { name: "North Park Toyota", score: "A+", avgMarkup: -3.4, daysToSell: 21, dropFreq: 1.8, listings: 1842, dealFreq: "High" },
-  { name: "Bluebonnet Ford", score: "A", avgMarkup: -2.1, daysToSell: 24, dropFreq: 1.2, listings: 1450, dealFreq: "High" },
-  { name: "Gunn Honda", score: "B", avgMarkup: 1.2, daysToSell: 28, dropFreq: 0.8, listings: 1120, dealFreq: "Medium" },
-];
+const FALLBACK_IMAGE =
+  "https://images.unsplash.com/photo-1492144534655-ae79c964c9d7?w=1200&q=82";
 
-const DEFAULT_IMAGES: Record<string, string> = {
-  "toyota_tacoma": "https://images.unsplash.com/photo-1629897048514-3dd7414cc710?w=800&q=80",
-  "ford_f-150": "https://images.unsplash.com/photo-1559416523-140ddc3d238c?w=800&q=80",
-  "chevrolet_tahoe": "https://images.unsplash.com/photo-1563720223185-11003d516935?w=800&q=80",
-  "honda_civic": "https://images.unsplash.com/photo-1605810731057-048c26ab8eb9?w=800&q=80",
-  "jeep_wrangler": "https://images.unsplash.com/photo-1553440569-bcc63803a83d?w=800&q=80",
+type Deal = {
+  rank: number;
+  listing: {
+    id: number;
+    year: number;
+    make: string;
+    model: string;
+    trim?: string | null;
+    price?: number | null;
+    mileage?: number | null;
+    city?: string | null;
+    state?: string | null;
+    distance?: number | null;
+    dealerName?: string | null;
+    titleStatus?: string | null;
+    imageUrls?: string[] | null;
+    lastSeenAt?: string | null;
+  };
+  score: {
+    dealScore: number;
+    marketValueEst?: number | null;
+    compCount?: number | null;
+    confidence?: number | null;
+    savingsAmount?: number | null;
+    scoreBreakdown?: Record<string, number> | null;
+    scoreReasons?: string[] | null;
+    velocityPrediction?: number | null;
+  };
 };
 
-function getImage(make: string, model: string, imageUrls: string[]): string {
-  if (imageUrls && imageUrls.length > 0 && imageUrls[0]) return imageUrls[0];
-  const key = `${make.toLowerCase()}_${model.toLowerCase()}`;
-  return DEFAULT_IMAGES[key] || "https://images.unsplash.com/photo-1492144534655-ae79c964c9d7?w=800&q=80";
+const scoreParts = [
+  ["priceAdvantage", "Price vs market", 40],
+  ["mileageAdvantage", "Mileage", 15],
+  ["localDemand", "Local demand", 15],
+  ["reliability", "Reliability", 10],
+  ["sellerQuality", "Seller quality", 10],
+  ["priceDropSignal", "Price history", 10],
+] as const;
+
+function money(value?: number | null) {
+  return value ? `$${Math.round(value).toLocaleString()}` : "—";
+}
+
+function scoreLabel(score: number) {
+  if (score >= 85) return "Strong deal";
+  if (score >= 70) return "Good deal";
+  if (score >= 50) return "Fair value";
+  return "Watchlist";
+}
+
+function dealPath(deal: Deal) {
+  const { listing } = deal;
+  const base = `/deals/${encodeURIComponent(listing.make)}/${encodeURIComponent(listing.model)}`;
+  const url = new URL(base, window.location.origin);
+  url.searchParams.set("listing", String(listing.id));
+  return withAttribution(`${url.pathname}${url.search}`);
 }
 
 export default function Home() {
-  const [activeTab, setActiveTab] = useState("top-deals");
-  const [activeNav, setActiveNav] = useState("intelligence");
-  const [searchQuery, setSearchQuery] = useState("");
-  const [sortBy, setSortBy] = useState("score_desc");
+  const [search, setSearch] = useState("");
+  const [filter, setFilter] = useState<"all" | "strong" | "fast">("strong");
+  const [sort, setSort] = useState<"score" | "savings" | "mileage">("score");
+  const [visibleCount, setVisibleCount] = useState(12);
 
   const statsQuery = useQuery({
     queryKey: ["/api/stats/overview"],
     queryFn: () => apiRequest("GET", "/api/stats/overview"),
-    refetchInterval: 30000,
+    refetchInterval: 30_000,
   });
-
   const dealsQuery = useQuery({
-    queryKey: ["/api/deals/top", 0, 50],
+    queryKey: ["/api/deals/top", 50],
     queryFn: () => apiRequest("GET", "/api/deals/top?min_score=0&limit=50"),
-    refetchInterval: 30000,
+    refetchInterval: 30_000,
   });
 
-  const marketQuery = useQuery({
-    queryKey: ["/api/stats/market"],
-    queryFn: () => apiRequest("GET", "/api/stats/market?city=San%20Antonio"),
-  });
-
-  const deals = dealsQuery.data?.deals || [];
+  const deals: Deal[] = dealsQuery.data?.deals ?? [];
   const stats = statsQuery.data;
-  const marketSegments = marketQuery.data?.segments || [];
+  const featured = useMemo(() => {
+    const query = search.trim().toLowerCase();
+    return deals
+      .filter((deal) => {
+        const listing = deal.listing;
+        const matchesQuery =
+          !query ||
+          `${listing.year} ${listing.make} ${listing.model} ${listing.trim ?? ""} ${listing.dealerName ?? ""}`
+            .toLowerCase()
+            .includes(query);
+        const matchesFilter =
+          filter === "all" ||
+          (filter === "strong" && deal.score.dealScore >= 85) ||
+          (filter === "fast" && (deal.score.velocityPrediction ?? 0) >= 70);
+        return matchesQuery && matchesFilter;
+      })
+      .sort((a, b) => {
+        if (sort === "savings") return (b.score.savingsAmount ?? 0) - (a.score.savingsAmount ?? 0);
+        if (sort === "mileage") return (a.listing.mileage ?? Infinity) - (b.listing.mileage ?? Infinity);
+        return b.score.dealScore - a.score.dealScore;
+      });
+  }, [deals, filter, search, sort]);
 
-  const filteredDeals = deals.filter((d: any) => {
-    if (!searchQuery) return true;
-    const q = searchQuery.toLowerCase();
-    return (
-      d.listing.make.toLowerCase().includes(q) ||
-      d.listing.model.toLowerCase().includes(q) ||
-      (d.listing.trim && d.listing.trim.toLowerCase().includes(q)) ||
-      (d.listing.dealerName && d.listing.dealerName.toLowerCase().includes(q))
-    );
-  });
-
-  const sortedDeals = [...filteredDeals].sort((a: any, b: any) => {
-    switch (sortBy) {
-      case "score_desc": return b.score.dealScore - a.score.dealScore;
-      case "savings_desc": return (b.score.savingsAmount || 0) - (a.score.savingsAmount || 0);
-      case "velocity_desc": return (b.score.velocityPrediction || 0) - (a.score.velocityPrediction || 0);
-      case "mileage_asc": return (a.listing.mileage || 999999) - (b.listing.mileage || 999999);
-      default: return 0;
-    }
-  });
-
-  const getScoreColor = (score: number) => {
-    if (score >= 70) return "text-emerald-500";
-    if (score >= 50) return "text-blue-500";
-    if (score >= 30) return "text-yellow-500";
-    return "text-orange-500";
+  const leadDeal = deals[0];
+  const scrollToShortlist = () => {
+    document.getElementById("shortlist")?.scrollIntoView({ behavior: "smooth" });
+    trackCampaignEvent("Search", { content_category: "daily_shortlist" });
   };
-
-  const getScoreBg = (score: number) => {
-    if (score >= 70) return "bg-emerald-500/10 border-emerald-500/30";
-    if (score >= 50) return "bg-blue-500/10 border-blue-500/30";
-    if (score >= 30) return "bg-yellow-500/10 border-yellow-500/30";
-    return "bg-orange-500/10 border-orange-500/30";
-  };
-
-  const isEmpty = deals.length === 0 && !dealsQuery.isLoading;
 
   return (
-    <div className="min-h-screen bg-background pb-12">
-      <header className="border-b border-border/40 bg-card/50 backdrop-blur-xl sticky top-0 z-50">
-        <div className="container mx-auto px-4 h-16 flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <div className="bg-primary/10 p-2 rounded-lg">
-              <Car className="w-6 h-6 text-primary" />
-            </div>
-            <div>
-              <h1 className="text-xl font-bold tracking-tight leading-none" data-testid="text-app-title">DealIntel<span className="text-primary">SA</span></h1>
-              <p className="text-[10px] text-muted-foreground uppercase tracking-wider font-semibold">Automotive Market Intelligence</p>
-            </div>
-          </div>
-          
-          <div className="hidden md:flex items-center gap-6">
-            <nav className="flex items-center gap-4 text-sm font-medium h-16">
-              <button 
-                data-testid="nav-intelligence"
-                onClick={() => setActiveNav("intelligence")}
-                className={`h-full px-2 transition-colors ${activeNav === "intelligence" ? "text-primary border-b-2 border-primary" : "text-muted-foreground hover:text-primary"}`}
-              >
-                Intelligence Hub
-              </button>
-              <button 
-                data-testid="nav-dealers"
-                onClick={() => setActiveNav("dealers")}
-                className={`h-full px-2 transition-colors ${activeNav === "dealers" ? "text-primary border-b-2 border-primary" : "text-muted-foreground hover:text-primary"}`}
-              >
-                Dealer Analytics
-              </button>
-              <button 
-                data-testid="nav-market"
-                onClick={() => setActiveNav("market")}
-                className={`h-full px-2 transition-colors ${activeNav === "market" ? "text-primary border-b-2 border-primary" : "text-muted-foreground hover:text-primary"}`}
-              >
-                Market Index
-              </button>
-            </nav>
-            <div className="h-4 w-[1px] bg-border"></div>
-            <Button variant="outline" size="sm" className="gap-2">
-              <MapPin className="w-4 h-4" />
-              San Antonio Area
-            </Button>
-          </div>
-        </div>
+    <div className="site-shell min-h-[100dvh] bg-background text-foreground">
+      <header className="site-header">
+        <a className="brand-lockup" href="/" aria-label="DealIntel SA home">
+          <span className="brand-mark">DI</span>
+          <span><strong>DealIntel SA</strong><small>San Antonio vehicle intelligence</small></span>
+        </a>
+        <nav aria-label="Primary navigation">
+          <a href="#shortlist">Today’s shortlist</a>
+          <a href="#method">How scores work</a>
+          <span className="market-status"><i /> Market engine online</span>
+        </nav>
       </header>
 
-      <main className="container mx-auto px-4 pt-8">
-        
-        {activeNav === "intelligence" && (
-          <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
-            <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-8">
-              <div>
-                <h2 className="text-3xl font-bold tracking-tight mb-1">Market Intelligence</h2>
-                <p className="text-muted-foreground" data-testid="text-listing-count">
-                  {stats ? `Analyzing ${stats.totalListings.toLocaleString()} active listings within 100 miles of San Antonio.` : "Loading market data..."}
-                </p>
-              </div>
-              <div className="flex items-center gap-2 w-full md:w-auto">
-                <div className="relative flex-1 md:w-64">
-                  <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-                  <Input 
-                    data-testid="input-search"
-                    placeholder="Search make, model, or dealer..." 
-                    className="pl-9 bg-card border-border/50"
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                  />
-                </div>
-                <Badge variant="outline" className="h-9 gap-2 px-3 border-emerald-500/30 bg-emerald-500/5 text-emerald-600">
-                  <Clock className="w-4 h-4" />
-                  Daily licensed-market sync · up to $35K
-                </Badge>
-              </div>
+      <main>
+        <section className="hero-section">
+          <div className="hero-copy reveal-up">
+            <p className="eyebrow"><Sparkles size={14} /> Updated from licensed market data</p>
+            <h1>Stop hunting.<br />Start with the cars that <em>earned attention.</em></h1>
+            <p className="hero-lede">
+              We rank San Antonio vehicles by price versus estimated market value,
+              mileage, local demand, reliability, seller quality, and price history.
+              Every score shows its work.
+            </p>
+            <div className="hero-actions">
+              <button className="button-primary" onClick={scrollToShortlist}>
+                See today’s scored deals <ArrowRight size={18} />
+              </button>
+              <a className="button-quiet" href="#method">See the scoring method</a>
             </div>
+            <div className="trust-line">
+              <span><ShieldCheck size={16} /> No purchase obligation</span>
+              <span><Clock3 size={16} /> Daily inventory sync</span>
+              <span><MapPin size={16} /> San Antonio area</span>
+            </div>
+          </div>
 
-            {/* Empty State: Bootstrap */}
-            {isEmpty && (
-              <Card className="bg-card/60 border-border/50 p-12 text-center flex flex-col items-center justify-center mb-8">
-                <Car className="w-16 h-16 text-muted-foreground mb-4" />
-                <h3 className="text-2xl font-bold mb-2">No Data Yet</h3>
-                <p className="text-muted-foreground max-w-md mx-auto">
-                  The automated daily job will combine qualifying MarketCheck and Auto.dev truck listings, then calculate deal scores.
-                </p>
-              </Card>
-            )}
-
-            {/* Stats Row */}
-            {!isEmpty && (
+          <div className="hero-proof reveal-up delay-1" aria-label="Top deal preview">
+            <div className="proof-header"><span>Today’s #1 ranked deal</span><span className="live-chip"><i /> Live shortlist</span></div>
+            {leadDeal ? (
               <>
-                <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
-                  <Card className="bg-card/50 border-border/50 backdrop-blur-sm">
-                    <CardContent className="p-6 flex flex-col justify-between h-full gap-4">
-                      <div className="flex items-start justify-between">
-                        <div>
-                          <p className="text-sm font-medium text-muted-foreground mb-1">Below Market Today</p>
-                          <h3 className="text-3xl font-bold text-emerald-500" data-testid="text-below-market">{stats?.belowMarketToday || 0}</h3>
-                        </div>
-                        <div className="p-2 bg-emerald-500/10 rounded-md">
-                          <Flame className="w-5 h-5 text-emerald-500" />
-                        </div>
-                      </div>
-                      <div className="flex items-center text-xs text-muted-foreground font-medium">
-                        <span>Score 85+ deals detected</span>
-                      </div>
-                    </CardContent>
-                  </Card>
-
-                  <Card className="bg-card/50 border-border/50 backdrop-blur-sm">
-                    <CardContent className="p-6 flex flex-col justify-between h-full gap-4">
-                      <div className="flex items-start justify-between">
-                        <div>
-                          <p className="text-sm font-medium text-muted-foreground mb-1">Total Listings</p>
-                          <h3 className="text-2xl font-bold" data-testid="text-total-listings">{stats?.totalListings?.toLocaleString() || 0}</h3>
-                        </div>
-                        <div className="p-2 bg-primary/10 rounded-md">
-                          <BarChart3 className="w-5 h-5 text-primary" />
-                        </div>
-                      </div>
-                      <div className="flex items-center text-xs text-muted-foreground">
-                        <span>Within 100mi radius</span>
-                      </div>
-                    </CardContent>
-                  </Card>
-
-                  <Card className="bg-card/50 border-border/50 backdrop-blur-sm">
-                    <CardContent className="p-6 flex flex-col justify-between h-full gap-4">
-                      <div className="flex items-start justify-between">
-                        <div>
-                          <p className="text-sm font-medium text-muted-foreground mb-1">Price Snapshots</p>
-                          <h3 className="text-2xl font-bold" data-testid="text-price-drops">{stats?.priceDrops24h || 0}</h3>
-                        </div>
-                        <div className="p-2 bg-orange-500/10 rounded-md">
-                          <TrendingDown className="w-5 h-5 text-orange-500" />
-                        </div>
-                      </div>
-                      <div className="flex items-center text-xs text-muted-foreground font-medium">
-                        <span>Last 24 hours</span>
-                      </div>
-                    </CardContent>
-                  </Card>
-
-                  <Card className="bg-primary text-primary-foreground border-none overflow-hidden relative">
-                    <div className="absolute -right-4 -top-4 w-24 h-24 bg-white/10 rounded-full blur-2xl"></div>
-                    <CardContent className="p-6 flex flex-col justify-between h-full gap-4 relative z-10">
-                      <div className="flex items-start justify-between">
-                        <div>
-                          <p className="text-sm font-medium text-primary-foreground/80 mb-1">Engine Status</p>
-                          <h3 className="text-2xl font-bold" data-testid="text-engine-status">Online</h3>
-                        </div>
-                        <div className="p-2 bg-white/20 rounded-md">
-                          <ShieldCheck className="w-5 h-5 text-white" />
-                        </div>
-                      </div>
-                      <div className="flex flex-col gap-1 text-xs text-primary-foreground/90">
-                        <div className="flex items-center justify-between">
-                          <span>Listings Scored</span>
-                          <span>{deals.length}</span>
-                        </div>
-                      </div>
-                    </CardContent>
-                  </Card>
+                <div className="proof-vehicle">
+                  <img src={leadDeal.listing.imageUrls?.[0] || FALLBACK_IMAGE} alt={`${leadDeal.listing.year} ${leadDeal.listing.make} ${leadDeal.listing.model}`} />
+                  <div className="score-orbit"><strong>{Math.round(leadDeal.score.dealScore)}</strong><span>{scoreLabel(leadDeal.score.dealScore)}</span></div>
                 </div>
-
-                <Tabs defaultValue="top-deals" value={activeTab} onValueChange={setActiveTab} className="space-y-6">
-                  <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-                    <TabsList className="bg-card/50 border border-border/50 flex-wrap h-auto p-1">
-                      <TabsTrigger value="top-deals" className="data-[state=active]:bg-primary/10 data-[state=active]:text-primary py-2 px-4" data-testid="tab-top-deals">
-                        All Scored Deals
-                      </TabsTrigger>
-                      <TabsTrigger value="featured" className="py-2 px-4" data-testid="tab-featured">
-                        Featured (85+)
-                      </TabsTrigger>
-                      <TabsTrigger value="high-intent" className="py-2 px-4 flex items-center gap-1.5" data-testid="tab-fast-sellers">
-                        <Zap className="w-3.5 h-3.5" /> Fast Sellers
-                      </TabsTrigger>
-                    </TabsList>
-
-                    <div className="flex items-center gap-2 w-full sm:w-auto">
-                      <Select value={sortBy} onValueChange={setSortBy}>
-                        <SelectTrigger className="w-full sm:w-[220px] bg-card border-border/50" data-testid="select-sort">
-                          <SelectValue placeholder="Sort by" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="score_desc">Best Deal Score</SelectItem>
-                          <SelectItem value="velocity_desc">Highest Velocity</SelectItem>
-                          <SelectItem value="savings_desc">Largest Savings</SelectItem>
-                          <SelectItem value="mileage_asc">Lowest Mileage</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
-                  </div>
-
-                  <TabsContent value="top-deals" className="m-0 space-y-6">
-                    <DealsList deals={sortedDeals} getScoreColor={getScoreColor} getScoreBg={getScoreBg} />
-                  </TabsContent>
-                  
-                  <TabsContent value="featured" className="m-0 space-y-6">
-                    <DealsList 
-                      deals={sortedDeals.filter((d: any) => d.score.dealScore >= 85 && d.listing.titleStatus !== "salvage" && (d.listing.mileage || 0) <= 120000)}
-                      getScoreColor={getScoreColor} 
-                      getScoreBg={getScoreBg}
-                      emptyMessage="No featured deals (score 85+) found yet. Try ingesting more data or adjusting scoring."
-                    />
-                  </TabsContent>
-
-                  <TabsContent value="high-intent" className="m-0 space-y-6">
-                    <DealsList 
-                      deals={sortedDeals.filter((d: any) => (d.score.velocityPrediction || 0) > 60)}
-                      getScoreColor={getScoreColor} 
-                      getScoreBg={getScoreBg}
-                      emptyMessage="No high-velocity listings detected currently."
-                    />
-                  </TabsContent>
-                </Tabs>
+                <div className="proof-name"><span>{leadDeal.listing.year}</span><h2>{leadDeal.listing.make} {leadDeal.listing.model}</h2><p>{leadDeal.listing.trim || "Local listing"}</p></div>
+                <div className="proof-numbers">
+                  <div><small>Asking price</small><strong>{money(leadDeal.listing.price)}</strong></div>
+                  <div><small>Est. market value</small><strong>{money(leadDeal.score.marketValueEst)}</strong></div>
+                  <div className="accent-number"><small>Est. price advantage</small><strong>{money(leadDeal.score.savingsAmount)}</strong></div>
+                </div>
+                <a className="proof-link" href={dealPath(leadDeal)} onClick={() => trackCampaignEvent("SelectDeal", { listing_id: leadDeal.listing.id, deal_score: leadDeal.score.dealScore })}>
+                  Check this vehicle <ArrowRight size={17} />
+                </a>
               </>
-            )}
+            ) : <div className="proof-loading">Scoring today’s inventory…</div>}
           </div>
-        )}
+        </section>
 
-        {/* MARKET INDEX TAB */}
-        {activeNav === "market" && (
-          <div className="animate-in fade-in slide-in-from-bottom-4 duration-500 space-y-8">
-            <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-              <div>
-                <h2 className="text-3xl font-bold tracking-tight mb-1">San Antonio Vehicle Price Index</h2>
-                <p className="text-muted-foreground">Proprietary regional market intelligence from live data.</p>
-              </div>
-            </div>
+        <section className="market-strip" aria-label="Live market summary">
+          <div><small>Listings analyzed</small><strong>{stats?.totalListings?.toLocaleString() ?? "—"}</strong></div>
+          <div><small>Strong deals today</small><strong>{stats?.belowMarketToday ?? "—"}</strong></div>
+          <div><small>Price signals · 24h</small><strong>{stats?.priceDrops24h ?? "—"}</strong></div>
+          <div><small>Market coverage</small><strong>45 mi</strong></div>
+        </section>
 
-            <Card className="bg-card/50 border-border/50 backdrop-blur-sm">
-              <CardHeader>
-                <CardTitle>Segment Performance</CardTitle>
-                <CardDescription>Average price and inventory by vehicle segment.</CardDescription>
-              </CardHeader>
-              <CardContent>
-                {marketSegments.length === 0 ? (
-                  <p className="text-muted-foreground text-center py-8">Run the scoring job to generate market index data.</p>
-                ) : (
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-sm text-left">
-                      <thead className="text-xs text-muted-foreground uppercase bg-muted/50 border-y border-border/50">
-                        <tr>
-                          <th className="px-4 py-3 font-semibold">Segment</th>
-                          <th className="px-4 py-3 font-semibold">Median Price</th>
-                          <th className="px-4 py-3 font-semibold">Active Inventory</th>
-                          <th className="px-4 py-3 font-semibold">Demand Velocity</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {marketSegments.map((row: any, idx: number) => (
-                          <tr key={idx} className="border-b border-border/50 hover:bg-muted/20">
-                            <td className="px-4 py-4 font-semibold capitalize">{row.vehicleSegment}</td>
-                            <td className="px-4 py-4 font-mono">${row.medianPrice?.toLocaleString() || "—"}</td>
-                            <td className="px-4 py-4">{row.inventoryCount || 0} units</td>
-                            <td className="px-4 py-4">
-                              <Badge variant={row.demandVelocity === "High" ? "default" : "secondary"}
-                                     className={row.demandVelocity === "High" ? "bg-orange-500 hover:bg-orange-600 text-white" : ""}
-                              >
-                                {row.demandVelocity || "—"}
-                              </Badge>
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
-              </CardContent>
-            </Card>
+        <section className="shortlist-section" id="shortlist">
+          <div className="section-heading">
+            <div><p className="eyebrow">The daily shortlist</p><h2>Compare the evidence.<br />Choose only what adds up.</h2></div>
+            <p>Estimated market value is a decision aid, not a guaranteed sale price. Open any score to see its strongest reasons and comparison confidence.</p>
           </div>
-        )}
 
-        {/* DEALER ANALYTICS TAB */}
-        {activeNav === "dealers" && (
-          <div className="animate-in fade-in slide-in-from-bottom-4 duration-500 space-y-8">
-            <div>
-              <h2 className="text-3xl font-bold tracking-tight mb-1">Dealer Intelligence Layer</h2>
-              <p className="text-muted-foreground">Tracking dealer behavior, pricing aggressiveness, and negotiation likelihood.</p>
+          <div className="filter-rail">
+            <label className="search-box"><Search size={18} /><input type="search" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search make, model, trim, or dealer" aria-label="Search scored vehicles" /></label>
+            <div className="segmented-control" aria-label="Deal filters">
+              {(["strong", "all", "fast"] as const).map((value) => (
+                <button key={value} className={filter === value ? "active" : ""} onClick={() => { setFilter(value); setVisibleCount(12); }}>
+                  {value === "strong" ? "Strong deals" : value === "all" ? "All scored" : "Fast sellers"}
+                </button>
+              ))}
             </div>
-
-            <Card className="bg-card/50 border-border/50 backdrop-blur-sm">
-              <CardHeader>
-                <CardTitle>Top Volume Dealers (San Antonio Radius)</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="overflow-x-auto">
-                  <table className="w-full text-sm text-left">
-                    <thead className="text-xs text-muted-foreground uppercase bg-muted/50 border-y border-border/50">
-                      <tr>
-                        <th className="px-4 py-3 font-semibold">Dealer</th>
-                        <th className="px-4 py-3 font-semibold text-center">Rating</th>
-                        <th className="px-4 py-3 font-semibold">Avg vs Market</th>
-                        <th className="px-4 py-3 font-semibold">Avg Days to Sell</th>
-                        <th className="px-4 py-3 font-semibold">Deal Freq.</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {DEALER_DATA.map((dealer, idx) => (
-                        <tr key={idx} className="border-b border-border/50 hover:bg-muted/20">
-                          <td className="px-4 py-4 font-semibold flex items-center gap-2">
-                            <Store className="w-4 h-4 text-primary" />
-                            {dealer.name}
-                          </td>
-                          <td className="px-4 py-4 text-center">
-                            <div className={`inline-flex items-center justify-center w-8 h-8 rounded-full font-bold text-xs
-                              ${dealer.score.includes('A') ? 'bg-emerald-500/10 text-emerald-500 border border-emerald-500/30' : 'bg-blue-500/10 text-blue-500 border border-blue-500/30'}
-                            `}>
-                              {dealer.score}
-                            </div>
-                          </td>
-                          <td className="px-4 py-4">
-                            <Badge variant="outline" className={`font-mono border ${dealer.avgMarkup < 0 ? 'text-emerald-500 border-emerald-500/30 bg-emerald-500/5' : 'text-red-500 border-red-500/30 bg-red-500/5'}`}>
-                              {dealer.avgMarkup}%
-                            </Badge>
-                          </td>
-                          <td className="px-4 py-4">{dealer.daysToSell} days</td>
-                          <td className="px-4 py-4">
-                            <Badge variant={dealer.dealFreq === "High" ? "default" : "secondary"}>
-                              {dealer.dealFreq}
-                            </Badge>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </CardContent>
-            </Card>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <Card className="bg-card/50 border-border/50 backdrop-blur-sm">
-                <CardHeader>
-                  <CardTitle className="text-lg flex items-center gap-2">
-                    <Target className="w-5 h-5 text-primary" />
-                    Negotiation Intelligence
-                  </CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="p-4 border border-border/50 rounded-lg bg-background">
-                    <div className="flex justify-between items-center mb-2">
-                      <h4 className="font-semibold">North Park Toyota</h4>
-                      <Badge variant="secondary" className="bg-emerald-500/10 text-emerald-500 hover:bg-emerald-500/20">High Likelihood</Badge>
-                    </div>
-                    <p className="text-xs text-muted-foreground mb-2">Typical Negotiation Range:</p>
-                    <div className="text-xl font-mono font-bold">$800 – $1,400</div>
-                  </div>
-                </CardContent>
-              </Card>
-              
-              <Card className="bg-card/50 border-border/50 backdrop-blur-sm">
-                <CardHeader>
-                  <CardTitle className="text-lg">Dealer Score Methodology</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <ul className="space-y-3 text-sm">
-                    <li className="flex justify-between items-center">
-                      <span className="text-muted-foreground">Price Competitiveness</span>
-                      <span className="font-medium">40%</span>
-                    </li>
-                    <li className="flex justify-between items-center">
-                      <span className="text-muted-foreground">Inventory Turnover</span>
-                      <span className="font-medium">30%</span>
-                    </li>
-                    <li className="flex justify-between items-center">
-                      <span className="text-muted-foreground">Deal Frequency</span>
-                      <span className="font-medium">20%</span>
-                    </li>
-                    <li className="flex justify-between items-center">
-                      <span className="text-muted-foreground">Consumer Reputation</span>
-                      <span className="font-medium">10%</span>
-                    </li>
-                  </ul>
-                </CardContent>
-              </Card>
-            </div>
+            <label className="sort-select"><span>Sort</span><select value={sort} onChange={(event) => setSort(event.target.value as typeof sort)}><option value="score">Deal Score</option><option value="savings">Price advantage</option><option value="mileage">Lowest mileage</option></select><ChevronDown size={15} /></label>
           </div>
-        )}
 
+          {dealsQuery.isLoading ? (
+            <div className="deal-grid" aria-label="Loading scored vehicles">{Array.from({ length: 6 }).map((_, index) => <div className="deal-skeleton" key={index} />)}</div>
+          ) : dealsQuery.isError ? (
+            <div className="state-panel"><h3>The shortlist could not load.</h3><p>Please refresh the page. The scoring engine may be completing its daily update.</p></div>
+          ) : featured.length ? (
+            <><div className="deal-grid">{featured.slice(0, visibleCount).map((deal) => <DealCard key={deal.listing.id} deal={deal} />)}</div>{visibleCount < featured.length ? <button className="load-more" onClick={() => setVisibleCount((count) => count + 12)}>Show more scored vehicles <ArrowRight size={17} /></button> : null}</>
+          ) : <div className="state-panel"><h3>No vehicles match those filters.</h3><p>Try another make or switch to “All scored.”</p></div>}
+        </section>
+
+        <section className="method-section" id="method">
+          <div className="method-intro"><p className="eyebrow">Transparent by design</p><h2>A score should shorten the search—not hide the facts.</h2><p>Deal Score compresses six signals into a first pass. The market estimate, comparison count, confidence, title status, and score reasons stay visible so you can make your own call.</p></div>
+          <ol className="method-list">
+            <li><span>01</span><div><strong>Price advantage</strong><p>Up to 40 points from asking price versus local comparable inventory.</p></div></li>
+            <li><span>02</span><div><strong>Vehicle context</strong><p>Mileage, reliability, and title signals adjust the quality of the opportunity.</p></div></li>
+            <li><span>03</span><div><strong>Local movement</strong><p>San Antonio demand and price-drop history reveal momentum without fake countdowns.</p></div></li>
+            <li><span>04</span><div><strong>Confidence</strong><p>Comparison count shows how much market evidence supports the estimate.</p></div></li>
+          </ol>
+        </section>
+
+        <section className="closing-cta">
+          <div><p className="eyebrow">Know before you go</p><h2>Found a car worth seeing?</h2><p>Request availability and a preferred test-drive window. The dealer confirms the vehicle and time before you make the trip.</p></div>
+          <button className="button-primary" onClick={scrollToShortlist}>Choose a scored vehicle <ArrowRight size={18} /></button>
+        </section>
       </main>
+
+      <footer>
+        <div className="brand-lockup"><span className="brand-mark">DI</span><span><strong>DealIntel SA</strong><small>Evidence before the test drive.</small></span></div>
+        <p>Estimated market values are informational. Taxes, title, registration, and dealer-required charges may affect the out-the-door price.</p>
+        <a href="/privacy">Privacy</a>
+      </footer>
     </div>
   );
 }
 
-function DealsList({ deals, getScoreColor, getScoreBg, emptyMessage }: { deals: any[]; getScoreColor: (n: number) => string; getScoreBg: (n: number) => string; emptyMessage?: string }) {
-  if (deals.length === 0) {
-    return (
-      <Card className="bg-card/40 border-border/50 p-12 text-center flex flex-col items-center justify-center">
-        <Car className="w-12 h-12 text-muted-foreground mb-4" />
-        <p className="text-muted-foreground">{emptyMessage || "No deals found matching your criteria."}</p>
-      </Card>
-    );
-  }
+function DealCard({ deal }: { deal: Deal }) {
+  const { listing, score } = deal;
+  const [open, setOpen] = useState(false);
+  const reasons = score.scoreReasons?.slice(0, 3) ?? [];
+  const path = dealPath(deal);
 
   return (
-    <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
-      <div className="xl:col-span-2 space-y-6">
-        {deals.map((deal: any) => {
-          const l = deal.listing;
-          const s = deal.score;
-          const savings = s.savingsAmount || 0;
-          const breakdown = s.scoreBreakdown || {};
-          const image = getImage(l.make, l.model, l.imageUrls);
-
-          return (
-            <Card key={l.id} className="overflow-hidden border-border/40 hover:border-primary/30 transition-all duration-300 bg-card/60 backdrop-blur-md shadow-lg shadow-black/5 group" data-testid={`card-deal-${l.id}`}>
-              <div className="p-0">
-                <div className="flex flex-col sm:flex-row">
-                  <div className="w-full sm:w-[280px] h-[200px] relative overflow-hidden bg-muted flex-shrink-0">
-                    <img 
-                      src={image} 
-                      alt={`${l.year} ${l.make} ${l.model}`}
-                      className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105"
-                    />
-                    <div className="absolute top-3 left-3 flex flex-col gap-2">
-                      <Badge className="bg-black/70 backdrop-blur-md text-white border-none font-bold px-3 py-1 text-sm">
-                        {l.year}
-                      </Badge>
-                    </div>
-                    
-                    {savings > 1000 && (
-                      <div className="absolute bottom-3 right-3">
-                        <Badge className="bg-emerald-500/90 hover:bg-emerald-500 text-white border-none font-bold px-3 py-1 shadow-lg flex items-center gap-1.5">
-                          <Flame className="w-4 h-4" /> 
-                          ${Math.round(savings).toLocaleString()} BELOW MARKET
-                        </Badge>
-                      </div>
-                    )}
-                  </div>
-
-                  <div className="flex-1 p-5 flex flex-col justify-between">
-                    <div>
-                      <div className="flex justify-between items-start mb-3">
-                        <div>
-                          <h3 className="text-2xl font-bold tracking-tight text-foreground leading-none mb-1 group-hover:text-primary transition-colors" data-testid={`text-title-${l.id}`}>
-                            {l.make} {l.model}
-                          </h3>
-                          <p className="text-muted-foreground">{l.trim || ""}</p>
-                        </div>
-                        <div className="text-right flex flex-col items-end">
-                          <span className="text-3xl font-bold tracking-tighter" data-testid={`text-price-${l.id}`}>
-                            {l.price ? `$${l.price.toLocaleString()}` : "—"}
-                          </span>
-                          {s.marketValueEst && (
-                            <div className="flex items-center text-sm text-muted-foreground gap-1">
-                              <span>Est: <span className="line-through">${Math.round(s.marketValueEst).toLocaleString()}</span></span>
-                            </div>
-                          )}
-                        </div>
-                      </div>
-
-                      <div className="flex flex-wrap gap-2 mb-4">
-                        <Badge variant="outline" className={`border ${getScoreBg(s.dealScore)} ${getScoreColor(s.dealScore)} px-2.5 py-1`} data-testid={`badge-score-${l.id}`}>
-                          Score: <strong className="ml-1 text-base">{Math.round(s.dealScore)}</strong>
-                        </Badge>
-                        
-                        {l.mileage && (
-                          <Badge variant="secondary" className="bg-muted px-2.5 py-1 text-xs">
-                            <Gauge className="w-3 h-3 mr-1" />
-                            {l.mileage.toLocaleString()} mi
-                          </Badge>
-                        )}
-                        
-                        {l.distance != null && (
-                          <Badge variant="secondary" className="bg-muted px-2.5 py-1 text-xs">
-                            <MapPin className="w-3 h-3 mr-1" />
-                            {l.city}{l.distance > 0 ? `, ${l.distance} mi` : ""}
-                          </Badge>
-                        )}
-
-                        {l.titleStatus === "salvage" && (
-                          <Badge variant="destructive" className="bg-red-500/10 text-red-500 border-red-500/20 px-2.5 py-1 text-xs">
-                            <AlertTriangle className="w-3 h-3 mr-1" />
-                            Salvage Title
-                          </Badge>
-                        )}
-                      </div>
-                    </div>
-                    
-                    <div className="grid grid-cols-2 gap-4 text-sm mt-2 pt-4 border-t border-border/50">
-                      <div className="flex items-center justify-between">
-                        <span className="text-muted-foreground flex items-center gap-1"><Info className="w-3.5 h-3.5"/> Confidence</span>
-                        <span className="font-semibold flex items-center gap-1 text-emerald-500">
-                          {s.confidence ? `${Math.round(s.confidence * 100)}%` : "—"} 
-                          {s.compCount ? <span className="text-xs text-muted-foreground font-normal">({s.compCount} comps)</span> : null}
-                        </span>
-                      </div>
-                      <div className="flex items-center justify-between">
-                        <span className="text-muted-foreground flex items-center gap-1"><Zap className="w-3.5 h-3.5 text-orange-500"/> Velocity</span>
-                        <span className={`font-bold ${(s.velocityPrediction || 0) > 60 ? 'text-orange-500' : ''}`}>
-                          {s.velocityPrediction ? `${Math.round(s.velocityPrediction)}%` : "—"} 
-                          <span className="text-xs text-muted-foreground font-normal"> in 7d</span>
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                <Accordion type="single" collapsible className="w-full">
-                  <AccordionItem value="intelligence" className="border-none">
-                    <AccordionTrigger className="px-5 py-3 hover:bg-muted/30 hover:no-underline text-sm font-semibold text-primary" data-testid={`button-expand-${l.id}`}>
-                      View Deep Intelligence & Analytics
-                    </AccordionTrigger>
-                    <AccordionContent className="p-0 border-t border-border/50">
-                      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 p-5 bg-card/30">
-                        <div className="space-y-3">
-                          <h4 className="text-xs uppercase font-bold tracking-wider text-muted-foreground">Score Breakdown</h4>
-                          <div className="space-y-2 text-sm">
-                            {[
-                              { label: "Price vs Value", val: breakdown.priceAdvantage, max: 40 },
-                              { label: "Mileage", val: breakdown.mileageAdvantage, max: 15 },
-                              { label: "Local Demand", val: breakdown.localDemand, max: 15 },
-                              { label: "Reliability", val: breakdown.reliability, max: 10 },
-                              { label: "Seller Quality", val: breakdown.sellerQuality, max: 10 },
-                              { label: "Price Drop Signal", val: breakdown.priceDropSignal, max: 10 },
-                            ].map((item) => (
-                              <div key={item.label} className="flex justify-between items-center">
-                                <span>{item.label}</span>
-                                <span className={`font-mono ${(item.val || 0) > item.max * 0.6 ? 'text-emerald-500' : 'text-blue-500'}`}>+{item.val || 0}</span>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-
-                        <div className="space-y-3">
-                          <h4 className="text-xs uppercase font-bold tracking-wider text-muted-foreground">Reasons</h4>
-                          <ul className="space-y-2 text-sm">
-                            {(s.scoreReasons || []).map((reason: string, idx: number) => (
-                              <li key={idx} className="flex items-start gap-2">
-                                <CheckCircle2 className="w-4 h-4 text-primary mt-0.5 flex-shrink-0" />
-                                <span className="text-foreground/80">{reason}</span>
-                              </li>
-                            ))}
-                          </ul>
-                        </div>
-
-                        <div className="space-y-3">
-                          <h4 className="text-xs uppercase font-bold tracking-wider text-muted-foreground">Professional Tools</h4>
-                          
-                          {s.wholesaleEstimate && (
-                            <div className="border border-border/50 rounded-md p-3 bg-background relative overflow-hidden">
-                              <p className="text-xs text-muted-foreground mb-1">Flip Potential</p>
-                              <div className="flex justify-between items-end">
-                                <span className="text-sm font-medium">Est. Wholesale</span>
-                                <span className="font-mono font-bold">${s.wholesaleEstimate.toLocaleString()}</span>
-                              </div>
-                              {s.marketValueEst && (
-                                <div className="text-xs text-emerald-500 mt-1 text-right font-bold">
-                                  +${Math.round(s.marketValueEst - s.wholesaleEstimate).toLocaleString()} margin
-                                </div>
-                              )}
-                            </div>
-                          )}
-
-                          {s.suggestedOffer && (
-                            <div className="border border-primary/30 rounded-md p-3 bg-primary/5">
-                              <div className="flex justify-between items-center mb-1">
-                                <p className="text-xs font-bold text-primary flex items-center gap-1">
-                                  <Target className="w-3.5 h-3.5" /> AI Target Offer
-                                </p>
-                              </div>
-                              <div className="text-xl font-bold tracking-tight">${s.suggestedOffer.toLocaleString()}</div>
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                      
-                      <div className="flex flex-wrap items-center justify-between gap-3 p-4 bg-muted/20 border-t border-border/50">
-                        <div className="flex items-center gap-2 text-sm">
-                          {l.isDealer ? <Store className="w-4 h-4 text-primary" /> : <AlertTriangle className="w-4 h-4 text-orange-500" />}
-                          <span className="font-medium">{l.dealerName || "Private Seller"}</span>
-                        </div>
-                        <Button className="bg-primary hover:bg-primary/90 shadow-lg shadow-primary/20">
-                          Check Financing Options
-                        </Button>
-                      </div>
-                    </AccordionContent>
-                  </AccordionItem>
-                </Accordion>
-              </div>
-            </Card>
-          );
-        })}
+    <article className="deal-card">
+      <div className="deal-image-wrap">
+        <img src={listing.imageUrls?.[0] || FALLBACK_IMAGE} alt={`${listing.year} ${listing.make} ${listing.model}`} loading="lazy" />
+        <div className="rank-chip">#{deal.rank} today</div>
+        <div className="card-score"><strong>{Math.round(score.dealScore)}</strong><span>{scoreLabel(score.dealScore)}</span></div>
       </div>
-
-      <div className="space-y-6">
-        <Card className="bg-card/40 border-border/50 backdrop-blur-sm">
-          <CardHeader className="pb-3">
-            <CardTitle className="text-lg flex items-center gap-2">
-              <Flame className="w-5 h-5 text-orange-500" />
-              SA Local Demand
-            </CardTitle>
-            <CardDescription>Segments trending in San Antonio.</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div>
-              <div className="flex justify-between text-sm mb-1">
-                <span className="font-medium">Full-Size Trucks</span>
-                <span className="text-emerald-500 font-bold">+18%</span>
-              </div>
-              <Progress value={85} className="h-2 bg-muted/50" />
-            </div>
-            <div>
-              <div className="flex justify-between text-sm mb-1">
-                <span className="font-medium">Mid-Size Trucks</span>
-                <span className="text-emerald-500 font-bold">+14%</span>
-              </div>
-              <Progress value={75} className="h-2 bg-muted/50" />
-            </div>
-            <div>
-              <div className="flex justify-between text-sm mb-1">
-                <span className="font-medium">Large SUVs</span>
-                <span className="text-emerald-500 font-bold">+11%</span>
-              </div>
-              <Progress value={65} className="h-2 bg-muted/50" />
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card className="bg-card/40 border-border/50 backdrop-blur-sm">
-          <CardHeader className="pb-3">
-            <CardTitle className="text-lg flex items-center gap-2">
-              <Gauge className="w-5 h-5 text-blue-500" />
-              Scoring Model
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <ul className="space-y-3 text-sm">
-              <li className="flex justify-between items-center">
-                <span className="text-muted-foreground">Price vs Market Value</span>
-                <span className="font-medium">40%</span>
-              </li>
-              <li className="flex justify-between items-center">
-                <span className="text-muted-foreground">Mileage Advantage</span>
-                <span className="font-medium">15%</span>
-              </li>
-              <li className="flex justify-between items-center">
-                <span className="text-muted-foreground">Local SA Demand</span>
-                <span className="font-medium">15%</span>
-              </li>
-              <li className="flex justify-between items-center">
-                <span className="text-muted-foreground">Reliability</span>
-                <span className="font-medium">10%</span>
-              </li>
-              <li className="flex justify-between items-center">
-                <span className="text-muted-foreground">Seller Quality</span>
-                <span className="font-medium">10%</span>
-              </li>
-              <li className="flex justify-between items-center">
-                <span className="text-muted-foreground">Price Drop Signal</span>
-                <span className="font-medium">10%</span>
-              </li>
-            </ul>
-            <div className="mt-4 pt-4 border-t border-border/50 text-xs text-muted-foreground">
-              <AlertTriangle className="w-3 h-3 inline mr-1 text-orange-500" /> Heavy penalties for salvage/rebuilt titles.
-            </div>
-          </CardContent>
-        </Card>
+      <div className="deal-body">
+        <div className="deal-title-row"><div><small>{listing.year} · {listing.trim || "Local listing"}</small><h3>{listing.make} {listing.model}</h3></div><div className="deal-price"><strong>{money(listing.price)}</strong><small>asking price</small></div></div>
+        <div className="deal-facts"><span><Gauge size={15} /> {listing.mileage?.toLocaleString() ?? "—"} mi</span><span><MapPin size={15} /> {listing.city || "San Antonio"}{listing.distance ? ` · ${listing.distance} mi` : ""}</span></div>
+        <div className="value-band">
+          <div><small>Estimated market</small><strong>{money(score.marketValueEst)}</strong></div>
+          <div><small>Est. price advantage</small><strong>{money(score.savingsAmount)}</strong></div>
+          <div><small>Confidence</small><strong>{score.confidence ? `${Math.round(score.confidence * 100)}%` : "—"}</strong><em>{score.compCount ? `${score.compCount} comps` : "limited comps"}</em></div>
+        </div>
+        {reasons.length ? <ul className="reason-list">{reasons.map((reason) => <li key={reason}><Check size={14} /> {reason}</li>)}</ul> : null}
+        <div className="card-actions">
+          <button className="evidence-button" onClick={() => setOpen((value) => !value)} aria-expanded={open}>{open ? "Hide" : "Show"} score breakdown <ChevronDown size={15} className={open ? "rotate" : ""} /></button>
+          <a href={path} className="availability-link" onClick={() => trackCampaignEvent("StartAvailabilityRequest", { listing_id: listing.id, deal_score: score.dealScore })}>Check availability <ArrowRight size={16} /></a>
+        </div>
+        {open ? (
+          <div className="score-breakdown">
+            {scoreParts.map(([key, label, max]) => { const value = score.scoreBreakdown?.[key] ?? 0; return <div key={key}><span>{label}</span><i><b style={{ width: `${Math.min(100, value / max * 100)}%` }} /></i><strong>+{value}</strong></div>; })}
+            <p><BarChart3 size={14} /> Estimated values are based on comparable active inventory and can change as listings update.</p>
+          </div>
+        ) : null}
       </div>
-    </div>
+    </article>
   );
 }

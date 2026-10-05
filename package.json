@@ -12,7 +12,8 @@
     "preview:cloudflare": "vite preview --config vite.config.cloudflare.ts",
     "deploy:cloudflare": "npm run build:cloudflare && wrangler deploy --config dist/public/deal_intel_sa/wrangler.json",
     "start": "npm run preview:cloudflare",
-    "check": "npm run check:cloudflare",
+    "check": "npm run check:cloudflare && npm run check:client",
+    "check:client": "tsc -p tsconfig.client.json --incremental false",
     "test": "tsx --test worker/*.test.ts server/*.test.ts shared/*.test.ts",
     "db:migrate:local": "wrangler d1 migrations apply deal-intel-sa-db --local --persist-to client/.wrangler/state --config wrangler.jsonc",
     "db:migrate:remote": "wrangler d1 migrations apply deal-intel-sa-db --remote --config wrangler.jsonc"

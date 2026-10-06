@@ -4,6 +4,7 @@ import { Link } from "wouter";
 import { ArrowLeft, Info, LineChart as LineChartIcon, Loader2 } from "lucide-react";
 import { Area, AreaChart, Bar, BarChart, CartesianGrid, Cell, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { apiRequest } from "@/lib/api";
+import { BrandMark } from "@/components/BrandMark";
 
 // Mirrors server/market-index/texas.ts (TexasIndexReport).
 interface SeriesPoint { weekStart: string; index: number; soldCount: number; segmentMedians: Record<string, number | null>; segmentCounts: Record<string, number> }
@@ -456,6 +457,7 @@ export default function TexasIndex() {
                 {movers.map((m, i) => (
                   <li key={m.make} className="flex items-center gap-3 border-b px-4 py-2.5" style={{ borderColor: C.border }}>
                     <span className="w-4 text-xs tabular-nums" style={{ color: C.faint }}>{i + 1}</span>
+                    <BrandMark make={m.make} color={C.text} background={C.raised} />
                     <div className="min-w-0 flex-1">
                       <div className="truncate text-sm font-bold">{m.make}</div>
                       <div className="text-[11px]" style={{ color: C.faint }}>Vol {compact(m.sold30d)} · {compact(m.activeCount)} active</div>

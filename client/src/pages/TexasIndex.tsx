@@ -194,6 +194,8 @@ export default function TexasIndex() {
     return rows.slice(0, 10);
   }, [report, moverTab]);
 
+  // Biggest Texas brands by 30-day sales; there is no per-make price series, so no sparkline.
+  const watchMakes = report ? [...report.makes].sort((a, b) => b.sold30d - a.sold30d).slice(0, 8) : [];
   const metros = report ? [...report.metros].sort((a, b) => b.sold30d - a.sold30d) : [];
   const metroRange = (pick: (m: MetroRow) => number | null): [number, number] => {
     const vals = metros.map(pick).filter((v): v is number => v != null);
@@ -475,7 +477,7 @@ export default function TexasIndex() {
 
           {/* Watchlist */}
           <div className="flex items-center gap-3 overflow-x-auto border-b px-4 py-3" style={{ borderColor: C.border, background: C.panel }}>
-            <span className="shrink-0 text-[11px] font-bold uppercase tracking-wider" style={{ color: C.faint }}>Watchlist</span>
+            <span className="w-[68px] shrink-0 text-[11px] font-bold uppercase tracking-wider" style={{ color: C.faint }}>Watchlist</span>
             {report.segments.map((s) => {
               const values = series.map((p) => p.segmentMedians[s.segment]).filter((v): v is number => v != null);
               return (
@@ -490,6 +492,24 @@ export default function TexasIndex() {
               );
             })}
           </div>
+          {watchMakes.length > 0 && (
+          <div className="flex items-center gap-3 overflow-x-auto border-b px-4 py-3" style={{ borderColor: C.border, background: C.panel }}>
+            <span className="w-[68px] shrink-0 text-[11px] font-bold uppercase tracking-wider" style={{ color: C.faint }}>Brands</span>
+            {watchMakes.map((m) => (
+              <div key={m.make} className="flex shrink-0 items-center gap-2.5 rounded-md border px-3 py-2" style={{ borderColor: C.border, background: C.raised }}>
+                <BrandMark make={m.make} color={C.text} background={C.panel} />
+                <div>
+                  <div className="text-xs font-bold">{m.make}</div>
+                  <div className="text-[11px] tabular-nums" style={{ color: C.faint }}>Vol {compact(m.sold30d)}</div>
+                </div>
+                <div className="text-right">
+                  <div className="text-xs font-bold tabular-nums">{num(m.daysSupply)}d</div>
+                  <div className="text-[10px] uppercase" style={{ color: C.faint }}>supply</div>
+                </div>
+              </div>
+            ))}
+          </div>
+          )}
 
           <div className="flex gap-3 px-4 py-4 text-[11px] leading-relaxed" style={{ color: C.faint }}>
             <Info className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden />

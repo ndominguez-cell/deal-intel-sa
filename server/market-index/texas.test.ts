@@ -173,3 +173,19 @@ test("a few failed requests still publish; many do not", () => {
   assert.equal(isPublishableReport({ source: "marketcheck", headline, errors: Array(20).fill("429") }), false);
   assert.equal(isPublishableReport({ source: "demo", headline, errors: [] }), false);
 });
+
+test("stored weeks inside the fresh pull's range never survive the merge", async () => {
+  const mc = async (_path: string, params: Record<string, string | number>) => {
+    if (params.facets) return { num_found: 10, facets: { make: [{ item: "Ford", count: 100 }] } };
+    return { num_found: 5000, stats: { price: { median: 25000 }, dom: { median: 50 } } };
+  };
+  // History saved by the old no-lag code: an older week plus an underreported newest week.
+  const stored = [
+    { weekStart: "2026-06-29", index: 100, soldCount: 30000, segmentMedians: { SUV: 25000 }, segmentCounts: { SUV: 30000 } },
+    { weekStart: "2026-09-21", index: 108, soldCount: 400, segmentMedians: { SUV: 27000 }, segmentCounts: { SUV: 400 } },
+  ];
+  const report = await buildTexasIndex(mc, new Date("2026-09-28T12:00:00Z"), stored);
+  const weeks = report.series.map((p) => p.weekStart);
+  assert.equal(weeks[0], "2026-06-29", "older stored history is kept");
+  assert.equal(weeks[weeks.length - 1], "2026-09-14", "the stale, underreported week is dropped");
+});

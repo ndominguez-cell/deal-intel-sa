@@ -292,7 +292,12 @@ export async function buildTexasIndex(
     weekStart: isoDay(w.start),
     segments: Object.fromEntries(TX_SEGMENTS.map((seg, si) => [seg.key, weekResults[wi * TX_SEGMENTS.length + si]])),
   }));
-  const computed = computeIndexSeries(mergeWeeks(previousSeries, dropIncompleteWeeks(freshWeeks)));
+  // Stored history only fills weeks older than this pull. Every week inside the pull's
+  // range comes from it: a stored week that is now incomplete or past the reporting
+  // cutoff (e.g. saved by older code without the lag) must not survive the merge.
+  const firstFreshWeek = freshWeeks[0]?.weekStart ?? "";
+  const history = (previousSeries ?? []).filter((p) => p.weekStart < firstFreshWeek);
+  const computed = computeIndexSeries(mergeWeeks(history, dropIncompleteWeeks(freshWeeks)));
   const { weights } = computed;
   // With no segment that has a usable base week the index is undefined, not 0: publish no trend.
   const series = Object.values(weights).some((w) => w > 0) ? computed.series : [];

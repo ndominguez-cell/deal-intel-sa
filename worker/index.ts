@@ -40,7 +40,11 @@ async function handlePhotoRequest(request: Request, env: WorkerEnv, ctx: Executi
 
   // The DOM lib's CacheStorage type (also in scope) lacks the Workers-only `default` cache.
   const cache = (caches as unknown as { default: Cache }).default;
-  const cacheKey = new Request(request.url, { method: "GET" });
+  // Key on the photo path only: a caller-chosen query string must not bypass the cache
+  // and force a fresh (quota-spending) MarketCheck fetch.
+  const keyUrl = new URL(request.url);
+  keyUrl.search = "";
+  const cacheKey = new Request(keyUrl.toString(), { method: "GET" });
   const cached = await cache.match(cacheKey);
   if (cached) return cached;
 

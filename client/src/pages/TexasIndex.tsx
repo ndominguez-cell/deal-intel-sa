@@ -286,7 +286,7 @@ export default function TexasIndex() {
             <div className="border-b px-4 py-2 text-xs" style={{ borderColor: C.border, background: "rgba(245,158,11,0.08)", color: "#fcd34d" }}>
               <strong>Sample data.</strong> Statewide totals reflect a real September 2026 MarketCheck pull; segment, metro and make splits are illustrative. No price trend is shown until live data exists.
               {query.data?.marketCheckConfigured
-                ? " A MarketCheck key is configured; live data publishes after the next daily refresh."
+                ? " A MarketCheck key is configured; live data publishes after the next weekly refresh (Tuesdays, 11:15 UTC)."
                 : " Set MARKETCHECK_API_KEY and run the refresh to publish live data."}
             </div>
           )}

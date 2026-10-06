@@ -6,6 +6,8 @@ import {
   completeWeeks,
   computeIndexSeries,
   daysSupply,
+  dropIncompleteWeeks,
+  isPublishableReport,
   mergeWeeks,
   pctChange,
   type WeekPoint,
@@ -80,7 +82,12 @@ test("buildTexasIndex queries Texas used inventory and assembles a report", asyn
   const report = await buildTexasIndex(mc, new Date("2026-09-28T12:00:00Z"));
 
   assert.equal(report.source, "marketcheck");
-  assert.equal(report.series.length, 12);
+  assert.equal(report.series.length, 11);
+  // The newest week ends a full reporting lag before "now" (Mon Sep 28 → week of Sep 14).
+  assert.equal(report.series[report.series.length - 1].weekStart, "2026-09-14");
+  // Sold windows skip the lagging most recent days.
+  const soldWindows = new Set(calls.filter((c) => c.params.last_seen_days).map((c) => c.params.last_seen_days));
+  assert.deepEqual([...soldWindows].sort(), ["37-8", "67-38"]);
   assert.equal(report.headline.indexValue, 100);
   assert.equal(report.headline.daysSupply, 120);
   assert.equal(report.headline.medianDom, 44);
@@ -90,6 +97,16 @@ test("buildTexasIndex queries Texas used inventory and assembles a report", asyn
   assert.ok(calls.filter((c) => !c.params.zip).every((c) => c.params.state === "TX"));
   assert.ok(calls.filter((c) => c.path.endsWith("/recents")).every((c) => !(c.params.stats && c.params.facets)));
   assert.deepEqual(report.errors, []);
+});
+
+test("dropIncompleteWeeks leaves out weeks that are still being reported", () => {
+  const weeks = [
+    week("2026-08-31", { SUV: [16000, 25000], Sedan: [7000, 19500] }),
+    week("2026-09-07", { SUV: [15700, 25300], Sedan: [6800, 19800] }),
+    week("2026-09-14", { SUV: [16500, 25100], Sedan: [7700, 19700] }),
+    week("2026-09-21", { SUV: [253, 26000], Sedan: [85, 21998] }),
+  ];
+  assert.deepEqual(dropIncompleteWeeks(weeks).map((w) => w.weekStart), ["2026-08-31", "2026-09-07", "2026-09-14"]);
 });
 
 test("buildTexasIndex records failed calls without aborting the report", async () => {
@@ -132,4 +149,43 @@ test("sample report is deterministic, labeled, and has no simulated trend", () =
 test("sample segment totals add up to the statewide 30-day exits", () => {
   const a = buildDemoTexasIndex(new Date("2026-09-28T12:00:00Z"));
   assert.equal(a.segments.reduce((sum, s) => sum + s.sold30d, 0), a.headline.sold30d);
+});
+
+test("a quota-exhausted refresh is not publishable even with merged history", async () => {
+  const good = await buildTexasIndex(async (path: string, params: Record<string, string | number>) => {
+    if (params.facets) return { num_found: 10, facets: { make: [{ item: "Ford", count: 100 }] } };
+    return { num_found: 5000, stats: { price: { median: 25000 }, dom: { median: 50 } } };
+  }, new Date("2026-09-28T12:00:00Z"));
+  assert.equal(isPublishableReport(good), true);
+
+  // Oct 5, 2026 in production: every MarketCheck call returned 429 "Monthly API quota exhausted".
+  const failed = await buildTexasIndex(async () => {
+    throw new Error('MarketCheck request failed (429): {"message": "Monthly API quota exhausted"}');
+  }, new Date("2026-10-05T12:00:00Z"), good.series);
+  assert.ok(failed.series.some((p) => p.soldCount > 0), "stored history still merges in");
+  assert.equal(failed.headline.activeSupply, 0);
+  assert.equal(isPublishableReport(failed), false);
+});
+
+test("a few failed requests still publish; many do not", () => {
+  const headline = { activeSupply: 280000, sold30d: 160000 } as any;
+  assert.equal(isPublishableReport({ source: "marketcheck", headline, errors: Array(3).fill("429") }), true);
+  assert.equal(isPublishableReport({ source: "marketcheck", headline, errors: Array(20).fill("429") }), false);
+  assert.equal(isPublishableReport({ source: "demo", headline, errors: [] }), false);
+});
+
+test("stored weeks inside the fresh pull's range never survive the merge", async () => {
+  const mc = async (_path: string, params: Record<string, string | number>) => {
+    if (params.facets) return { num_found: 10, facets: { make: [{ item: "Ford", count: 100 }] } };
+    return { num_found: 5000, stats: { price: { median: 25000 }, dom: { median: 50 } } };
+  };
+  // History saved by the old no-lag code: an older week plus an underreported newest week.
+  const stored = [
+    { weekStart: "2026-06-29", index: 100, soldCount: 30000, segmentMedians: { SUV: 25000 }, segmentCounts: { SUV: 30000 } },
+    { weekStart: "2026-09-21", index: 108, soldCount: 400, segmentMedians: { SUV: 27000 }, segmentCounts: { SUV: 400 } },
+  ];
+  const report = await buildTexasIndex(mc, new Date("2026-09-28T12:00:00Z"), stored);
+  const weeks = report.series.map((p) => p.weekStart);
+  assert.equal(weeks[0], "2026-06-29", "older stored history is kept");
+  assert.equal(weeks[weeks.length - 1], "2026-09-14", "the stale, underreported week is dropped");
 });

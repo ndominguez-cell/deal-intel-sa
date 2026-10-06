@@ -23,9 +23,9 @@
     "traces": { "enabled": true, "head_sampling_rate": 0.1 }
   },
   // The Texas index cron must match TEXAS_INDEX_CRON in worker/index.ts:
-  // 12:00 UTC inventory sync, 11:15 UTC Texas market index refresh (~81 MarketCheck calls).
+  // 12:00 UTC daily inventory sync; 11:15 UTC Tuesdays Texas market index refresh (~77 MarketCheck calls).
   "triggers": {
-    "crons": ["0 12 * * *", "15 11 * * *"]
+    "crons": ["0 12 * * *", "15 11 * * 2"]
   },
   "d1_databases": [
     {

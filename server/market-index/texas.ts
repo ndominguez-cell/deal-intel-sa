@@ -111,6 +111,16 @@ export interface TexasIndexReport {
   errors: string[];
 }
 
+// A refresh with more failed MarketCheck requests than this (of ~77) is not published:
+// a rate-limited or quota-exhausted pull would otherwise replace good data with zeros.
+export const MAX_FAILED_REQUESTS = 10;
+
+/** Whether a report is complete enough to publish and show. */
+export function isPublishableReport(report: Pick<TexasIndexReport, "source" | "headline" | "errors">): boolean {
+  if (report.source !== "marketcheck") return false;
+  return report.headline.activeSupply > 0 && report.headline.sold30d > 0 && report.errors.length <= MAX_FAILED_REQUESTS;
+}
+
 // ── Pure calculations ──────────────────────────────────────────────────
 
 export function pctChange(current: number | null | undefined, prior: number | null | undefined): number | null {

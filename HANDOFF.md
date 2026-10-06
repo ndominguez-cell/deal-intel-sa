@@ -219,14 +219,22 @@ It uses two MarketCheck endpoints: `/v2/search/car/active` (current inventory) a
 
 ### How it runs on Cloudflare
 
-- **Daily cron at 11:15 UTC** (`15 11 * * *`, the second entry in
-  `triggers.crons`), 45 minutes before the inventory sync. `scheduled()` in
+- **Weekly cron, Tuesdays 11:15 UTC** (`15 11 * * 2`, the second entry in
+  `triggers.crons`). The index moves in whole weeks, and a daily run used ~77
+  MarketCheck requests a day; daily runs (plus duplicate cron firings) helped
+  exhaust the monthly MarketCheck quota in early October 2026. A scheduled run
+  that starts within 6 hours of another is skipped. `scheduled()` in
   `worker/index.ts` runs the index refresh when `controller.cron` matches
   `TEXAS_INDEX_CRON` and the inventory sync for any other cron. If you retime the
   index cron, change both places. Auto-Intel's Vercel Cron route and `CRON_SECRET`
   were dropped.
 - **Manual refresh:** `POST /api/jobs/market-index/texas` with the `ADMIN_TOKEN`
   bearer token. It returns the real error with a 502 if the refresh fails.
+- **Failed pulls are never published.** A refresh with more than 10 failed requests
+  (`MAX_FAILED_REQUESTS`), no active supply or no 30-day sales is not saved, and
+  `GET` serves the newest report that passes the same check
+  (`isPublishableReport`), so rate limits or an exhausted quota leave the last good
+  report on the page instead of zeros.
 - **Public read:** `GET /api/market-index/texas` returns the latest stored report,
   or the sample report if none exists, plus `marketCheckConfigured`.
 - **Storage:** each refresh inserts one row into D1 `market_index_reports`

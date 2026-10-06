@@ -7,6 +7,7 @@ import {
   computeIndexSeries,
   daysSupply,
   dropIncompleteWeeks,
+  isPublishableReport,
   mergeWeeks,
   pctChange,
   type WeekPoint,
@@ -148,4 +149,27 @@ test("sample report is deterministic, labeled, and has no simulated trend", () =
 test("sample segment totals add up to the statewide 30-day exits", () => {
   const a = buildDemoTexasIndex(new Date("2026-09-28T12:00:00Z"));
   assert.equal(a.segments.reduce((sum, s) => sum + s.sold30d, 0), a.headline.sold30d);
+});
+
+test("a quota-exhausted refresh is not publishable even with merged history", async () => {
+  const good = await buildTexasIndex(async (path: string, params: Record<string, string | number>) => {
+    if (params.facets) return { num_found: 10, facets: { make: [{ item: "Ford", count: 100 }] } };
+    return { num_found: 5000, stats: { price: { median: 25000 }, dom: { median: 50 } } };
+  }, new Date("2026-09-28T12:00:00Z"));
+  assert.equal(isPublishableReport(good), true);
+
+  // Oct 5, 2026 in production: every MarketCheck call returned 429 "Monthly API quota exhausted".
+  const failed = await buildTexasIndex(async () => {
+    throw new Error('MarketCheck request failed (429): {"message": "Monthly API quota exhausted"}');
+  }, new Date("2026-10-05T12:00:00Z"), good.series);
+  assert.ok(failed.series.some((p) => p.soldCount > 0), "stored history still merges in");
+  assert.equal(failed.headline.activeSupply, 0);
+  assert.equal(isPublishableReport(failed), false);
+});
+
+test("a few failed requests still publish; many do not", () => {
+  const headline = { activeSupply: 280000, sold30d: 160000 } as any;
+  assert.equal(isPublishableReport({ source: "marketcheck", headline, errors: Array(3).fill("429") }), true);
+  assert.equal(isPublishableReport({ source: "marketcheck", headline, errors: Array(20).fill("429") }), false);
+  assert.equal(isPublishableReport({ source: "demo", headline, errors: [] }), false);
 });

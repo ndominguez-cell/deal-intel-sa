@@ -1,6 +1,6 @@
 import { SA_CENTROID, haversineDistance } from "../server/engine/constants";
 import { runLicensedMarketPipeline } from "../server/engine/jobs";
-import { refreshTexasIndex } from "../server/market-index/job";
+import { DuplicateRunError, refreshTexasIndex } from "../server/market-index/job";
 import { buildDemoTexasIndex } from "../server/market-index/texas";
 import {
   MAX_LISTING_MILEAGE,
@@ -19,7 +19,9 @@ type WorkerEnv = Env & { ADMIN_TOKEN?: string };
 // Must match the second entry in triggers.crons (wrangler.jsonc). Each job runs
 // as its own invocation, so it gets its own subrequest budget and a failure in
 // one can't block the other.
-const TEXAS_INDEX_CRON = "15 11 * * *";
+// Weekly (Tuesdays 11:15 UTC): the index moves in whole weeks, and a daily run spent
+// ~81 MarketCheck requests a day for the same numbers.
+const TEXAS_INDEX_CRON = "15 11 * * 2";
 
 function json(data: unknown, init?: ResponseInit): Response {
   return Response.json(data, init);
@@ -384,7 +386,7 @@ async function runScheduledSync(env: WorkerEnv, scheduledTime: number): Promise<
 
 async function runScheduledTexasIndex(env: WorkerEnv, scheduledTime: number): Promise<void> {
   try {
-    const report = await refreshTexasIndex(getStorage(env), env.MARKETCHECK_API_KEY);
+    const report = await refreshTexasIndex(getStorage(env), env.MARKETCHECK_API_KEY, { skipIfRecentRun: true });
     console.log(
       JSON.stringify({
         event: "texas_market_index_refresh_completed",
@@ -395,6 +397,10 @@ async function runScheduledTexasIndex(env: WorkerEnv, scheduledTime: number): Pr
       }),
     );
   } catch (error) {
+    if (error instanceof DuplicateRunError) {
+      console.log(JSON.stringify({ event: "texas_market_index_refresh_skipped", reason: error.message }));
+      return;
+    }
     console.error(
       JSON.stringify({
         event: "texas_market_index_refresh_failed",

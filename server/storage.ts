@@ -9,7 +9,7 @@ import type {
   ScoreBreakdown,
 } from "@shared/schema";
 import type { VehicleTarget, VehicleTargetFilter } from "@shared/schema";
-import type { TexasIndexReport } from "./market-index/texas";
+import { isPublishableReport, type TexasIndexReport } from "./market-index/texas";
 
 type DbValue = string | number | boolean | null;
 type DbRow = Record<string, unknown>;
@@ -749,12 +749,25 @@ export class DatabaseStorage implements IStorage {
       .run();
   }
 
+  /** The newest report that passed the publish check; failed pulls saved by older code are skipped. */
   async getLatestMarketIndexReport(region: string): Promise<TexasIndexReport | undefined> {
-    const row = await this.db
-      .prepare("SELECT payload FROM market_index_reports WHERE region = ? ORDER BY as_of DESC, id DESC LIMIT 1")
+    const { results } = await this.db
+      .prepare("SELECT payload FROM market_index_reports WHERE region = ? ORDER BY as_of DESC, id DESC LIMIT 30")
       .bind(region)
-      .first<{ payload: string }>();
-    return row ? (JSON.parse(row.payload) as TexasIndexReport) : undefined;
+      .all<{ payload: string }>();
+    for (const row of results ?? []) {
+      const report = JSON.parse(row.payload) as TexasIndexReport;
+      if (isPublishableReport(report)) return report;
+    }
+    return undefined;
+  }
+
+  async getLatestJobStart(jobType: string): Promise<number | null> {
+    const row = await this.db
+      .prepare("SELECT MAX(started_at) AS started FROM jobs_runs WHERE job_type = ?")
+      .bind(jobType)
+      .first<{ started: number | null }>();
+    return row?.started ?? null;
   }
 
   async getActiveVehicleTargets(): Promise<VehicleTarget[]> {

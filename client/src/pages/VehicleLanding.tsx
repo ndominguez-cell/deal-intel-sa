@@ -48,7 +48,7 @@ export default function VehicleLanding() {
   );
   const [selectedId, setSelectedId] = useState<number | null>(Number.isFinite(listingId) ? listingId : null);
   const selected = deals.find((deal: any) => deal.listing.id === selectedId) ?? deals[0];
-  const [requestId] = useState(() => crypto.randomUUID());
+  const [requestId, setRequestId] = useState(() => crypto.randomUUID());
   const [form, setForm] = useState({ name: "", phone: "", email: "", preferredDate: "", preferredTimeWindow: "afternoon", consent: false, website: "" });
   const [sent, setSent] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -157,7 +157,16 @@ export default function VehicleLanding() {
               <div><p className="eyebrow">More {make} {model} options</p><h2>Compare before you request.</h2></div>
               <div className="option-list">
                 {deals.slice(0, 4).map((deal: any) => (
-                  <button key={deal.listing.id} className={deal.listing.id === listing.id ? "active" : ""} onClick={() => { setSelectedId(deal.listing.id); setSent(false); }}>
+                  <button key={deal.listing.id} className={deal.listing.id === listing.id ? "active" : ""} onClick={() => {
+                    setSelectedId(deal.listing.id);
+                    if (sent) {
+                      setBusy(false);
+                      setTurnstileToken("");
+                      setTurnstileResetKey((value) => value + 1);
+                      setRequestId(crypto.randomUUID());
+                    }
+                    setSent(false);
+                  }}>
                     <span>{deal.listing.year} {deal.listing.trim || deal.listing.model}</span><strong>{money(deal.listing.price)}</strong><em>Score {Math.round(deal.score.dealScore)}</em>
                   </button>
                 ))}
